@@ -8,12 +8,16 @@
 #define WNDPROC_INDEX GWLP_WNDPROC
 #endif
 
+#define WNDPROC_INDEX GWL_WNDPROC
+
+
 #define D3DDEV9_LEN 119
 
 #include "stdafx.h"
 
 typedef HRESULT(__stdcall* EndScene_t)(LPDIRECT3DDEVICE9);
 typedef LRESULT(CALLBACK*  WndProc_t) (HWND, UINT, WPARAM, LPARAM);
+typedef HRESULT(__stdcall* SetTexture_t)(LPDIRECT3DDEVICE9, DWORD, IDirect3DBaseTexture9*);
 
 DWORD WINAPI MainThread(LPVOID lpThreadParameter);
 DWORD WINAPI ExitThread(LPVOID lpThreadParameter);
@@ -33,10 +37,9 @@ namespace Base
 		extern LPDIRECT3DDEVICE9 pDxDevice9;
 		extern void*             pDeviceTable[D3DDEV9_LEN];
 		extern HWND              hWindow;
-		extern mem::voidptr_t    pEndScene;
+		extern void*    pEndScene;
 		extern EndScene_t        oEndScene;
 		extern WndProc_t         oWndProc;
-		extern mem::size_t       szEndScene;
 		extern UINT              WmKeys[0xFF];
 		extern bool              Detached;
 		extern bool              ToDetach;
@@ -53,6 +56,7 @@ namespace Base
 		extern std::vector<bool> line_blink;
 		extern std::vector<std::string> lines2;
 		extern std::vector<ImVec4> lines2_colors;
+		extern int takeImage;
 	}
 
 	namespace Hooks

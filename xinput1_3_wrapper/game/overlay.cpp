@@ -112,6 +112,8 @@ HRESULT __stdcall Base::Hooks::EndScene(LPDIRECT3DDEVICE9 pDevice)
 		ImGui::TextColored(Data::lines2_colors[5], Data::lines2[5].c_str());
 
 		ImGui::End();
+
+		ImGui::PopFont();
 	}
 
 	//ImGui::ShowDemoWindow();

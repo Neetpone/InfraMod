@@ -91,7 +91,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;XINPUT1_3_WRAPPER_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -101,7 +101,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ModuleDefinitionFile>xinput1_3_wrapper.def</ModuleDefinitionFile>
-      <AdditionalLibraryDirectories>$(DXSDK_DIR)Lib\x86\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>Libraries\;$(DXSDK_DIR)Lib\x86\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <OutputFile>$(OutDir)xinput1_3$(TargetExt)</OutputFile>
     </Link>
   </ItemDefinitionGroup>
@@ -137,7 +137,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <ModuleDefinitionFile>xinput1_3_wrapper.def</ModuleDefinitionFile>
       <AdditionalDependencies>d3d9.lib;d3dx9.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(DXSDK_DIR)Lib\x86\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>Libraries\;$(DXSDK_DIR)Lib\x86\;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <OutputFile>$(OutDir)xinput1_3$(TargetExt)</OutputFile>
     </Link>
   </ItemDefinitionGroup>
@@ -163,7 +163,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\xinput1_3_wrapper\xinput.h" />
+    <ClInclude Include="..\..\xinput1_3_wrapper\xinput_module_manager.h" />
     <ClInclude Include="base.h" />
+    <ClInclude Include="game\structs.h" />
     <ClInclude Include="include\font.hpp" />
     <ClInclude Include="include\imgui\imconfig.h" />
     <ClInclude Include="include\imgui\imgui.h" />
@@ -174,19 +177,16 @@
     <ClInclude Include="include\imgui\imstb_textedit.h" />
     <ClInclude Include="include\imgui\imstb_truetype.h" />
     <ClInclude Include="include\json.hpp" />
-    <ClInclude Include="include\libmem++\libmem.hpp" />
     <ClInclude Include="include\metadata.h" />
     <ClInclude Include="Logger.h" />
     <ClInclude Include="NonCopyable.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="StringUtils.h" />
     <ClInclude Include="targetver.h" />
-    <ClInclude Include="Types.h" />
     <ClInclude Include="Utils.h" />
-    <ClInclude Include="xinput.h" />
-    <ClInclude Include="xinput_module_manager.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\xinput1_3_wrapper\xinput1_3_wrapper.cpp" />
     <ClCompile Include="base.cpp" />
     <ClCompile Include="dllmain.cpp">
       <CompileAsManaged Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</CompileAsManaged>
@@ -226,9 +226,6 @@
     <ClCompile Include="include\imgui\imgui_widgets.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="include\libmem++\libmem.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
-    </ClCompile>
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -237,10 +234,9 @@
     </ClCompile>
     <ClCompile Include="StringUtils.cpp" />
     <ClCompile Include="Utils.cpp" />
-    <ClCompile Include="xinput1_3_wrapper.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="xinput1_3_wrapper.def" />
+    <None Include="..\..\xinput1_3_wrapper\xinput1_3_wrapper.def" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
