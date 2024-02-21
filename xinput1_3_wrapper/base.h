@@ -19,9 +19,6 @@ typedef HRESULT(__stdcall* EndScene_t)(LPDIRECT3DDEVICE9);
 typedef LRESULT(CALLBACK*  WndProc_t) (HWND, UINT, WPARAM, LPARAM);
 typedef HRESULT(__stdcall* SetTexture_t)(LPDIRECT3DDEVICE9, DWORD, IDirect3DBaseTexture9*);
 
-DWORD WINAPI MainThread(LPVOID lpThreadParameter);
-DWORD WINAPI ExitThread(LPVOID lpThreadParameter);
-
 extern ImVec4 g_font_color;
 extern ImVec4 g_font_color_max;
 

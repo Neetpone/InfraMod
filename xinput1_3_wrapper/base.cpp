@@ -45,6 +45,5 @@ bool Base::Shutdown()
 bool Base::Detach()
 {
 	Base::Shutdown();
-	CreateThread(nullptr, 0, ExitThread, Data::hModule, 0, nullptr);
 	return true;
 }

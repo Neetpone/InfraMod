@@ -15,16 +15,13 @@
     <ClInclude Include="include\json.hpp" />
     <ClInclude Include="include\metadata.h" />
     <ClInclude Include="include\font.hpp" />
-    <ClInclude Include="Logger.h" />
     <ClInclude Include="Utils.h" />
-    <ClInclude Include="NonCopyable.h" />
     <ClInclude Include="StringUtils.h" />
     <ClInclude Include="game\structs.h" />
-    <ClInclude Include="..\..\xinput1_3_wrapper\xinput_module_manager.h" />
-    <ClInclude Include="..\..\xinput1_3_wrapper\xinput.h" />
+    <ClInclude Include="plugin.h" />
+    <ClInclude Include="mod.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="base.cpp" />
     <ClCompile Include="include\imgui\imgui.cpp" />
@@ -39,9 +36,10 @@
     <ClCompile Include="game\overlay.cpp" />
     <ClCompile Include="Utils.cpp" />
     <ClCompile Include="StringUtils.cpp" />
-    <ClCompile Include="..\..\xinput1_3_wrapper\xinput1_3_wrapper.cpp" />
+    <ClCompile Include="plugin.cpp" />
+    <ClCompile Include="mod.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\xinput1_3_wrapper\xinput1_3_wrapper.def" />
+    <None Include="floorb_infra_mod.def" />
   </ItemGroup>
 </Project>
