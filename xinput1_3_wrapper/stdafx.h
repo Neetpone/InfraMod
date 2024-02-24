@@ -33,6 +33,4 @@
 #include <imgui/imgui.h>
 #include <imgui/imgui_impl_win32.h>
 #include <imgui/imgui_impl_dx9.h>
-
-#pragma comment(lib, "MinHook.x86.lib")
 #pragma comment(lib, "D3DX9.LIB")
