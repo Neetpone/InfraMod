@@ -18,21 +18,9 @@ bool              Base::Data::ToDetach   = false;
 bool              Base::Data::ShowOverlay = true;
 bool              Base::Data::InitImGui  = false;
 bool Base::Data::Inited = false;
-int Base::Data::takeImage = 0;
 
-std::vector<std::string> Base::Data::lines;
-std::vector<ImVec4> Base::Data::lines_colors;
-std::vector<bool> Base::Data::line_blink;
-std::vector<std::string> Base::Data::lines2;
-std::vector<ImVec4> Base::Data::lines2_colors;
 
-bool Base::Init()
-{
-	Base::Data::lines.resize(10);
-	Base::Data::lines_colors.resize(10);
-	Base::Data::line_blink.resize(10);
-	Base::Data::lines2.resize(10);
-	Base::Data::lines2_colors.resize(10);
+bool Base::Init() {
 	Hooks::Init();
 	return true;
 }

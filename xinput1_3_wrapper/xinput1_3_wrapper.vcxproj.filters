@@ -20,6 +20,7 @@
     <ClInclude Include="game\structs.h" />
     <ClInclude Include="plugin.h" />
     <ClInclude Include="mod.h" />
+    <ClInclude Include="game\overlay.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp" />

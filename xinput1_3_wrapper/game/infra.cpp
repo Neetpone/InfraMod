@@ -4,12 +4,12 @@
 #include <strsafe.h>
 #include <fstream>
 #include "structs.h"
+#include "overlay.h"
 
 using namespace infra::structs;
 using namespace infra::functions;
 
-namespace infra
-{
+namespace infra {
 	void* server_base;
 	void* engine_base;
 	void* client_base;
@@ -21,8 +21,6 @@ namespace infra
 static std::ofstream g_LogWriter = std::ofstream();
 
 #define HEX(X) std::hex << (X) << std::dec
-
-bool g_server_spawned = false;
 
 BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM lParam);
 HWND GetProcessWindow();
@@ -44,6 +42,11 @@ CInfraCameraFreezeFrame__OnCommand_t CInfraCameraFreezeFrame__OnCommand_orig;
 int __fastcall CInfraCameraFreezeFrame__OnCommand(void* thiz, int, void* lpKeyValues);
 
 
+// DirectX EndScene()
+HRESULT __stdcall EndScene(LPDIRECT3DDEVICE9 pDevice);
+HRESULT (__stdcall *EndScene_orig)(LPDIRECT3DDEVICE9 pDevice);
+
+
 /* Hooked functions end */
 
 // Handles to functions in the engine
@@ -61,15 +64,7 @@ static IDirect3DDevice9* g_Dev;
 
 nlohmann::json current_mapdata;
 
-static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* tex, int index);
-
-static long long CurrentTimeMillis() {
-	FILETIME ft;
-
-	GetSystemTimeAsFileTime(&ft);
-
-	return ((LONGLONG)ft.dwLowDateTime + ((LONGLONG)(ft.dwHighDateTime) << 32LL)) / 10000;
-}
+static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* tex);
 
 void* GetModuleAddress(const char* name) {
 	void* addr;
@@ -227,45 +222,58 @@ int get_max_value(int event_type, const char* map_name) {
 
 void update_gui_table(int event_type, const char* map_name, int value) {
 	int max_value = 0;
-	
+
 	try {
 		max_value = get_max_value(event_type, map_name);
 	}
 	catch (std::exception e) {
-
 	}
-	
+
 	ImVec4 color = (value == max_value) ? g_font_color_max : g_font_color;
 
-	switch (event_type)
-	{
+	switch (event_type) {
 	case 0:
-		Base::Data::lines[1] = "Defects:     ";
-		Base::Data::lines2[1] = format_stat(value, max_value);
-		Base::Data::lines2_colors[1] = color;
+		overlay::lines[0] = overlay::OverlayLine_t(
+			"Defects:     ",
+			format_stat(value, max_value),
+			color,
+			color
+		);
 		break;
 	case 1:
-		Base::Data::lines[2] = "Corruption:  ";
-		Base::Data::lines2[2] = format_stat(value, max_value);
-		Base::Data::lines2_colors[2] = color;
+		overlay::lines[1] = overlay::OverlayLine_t(
+			"Corruption:  ",
+			format_stat(value, max_value),
+			color,
+			color
+		);
 		break;
 	case 2:
-		Base::Data::lines[3] = "Repairs:     ";
-		Base::Data::lines2[3] = format_stat(value, max_value);
-		Base::Data::lines2_colors[3] = color;
+		overlay::lines[2] = overlay::OverlayLine_t(
+			"Repairs:     ",
+			format_stat(value, max_value),
+			color,
+			color
+		);
 		break;
 	case 3:
 		// "mistakes_made";
 		break;
 	case 4:
-		Base::Data::lines[4] = "Geocaches:   ";
-		Base::Data::lines2[4] = format_stat(value, max_value);
-		Base::Data::lines2_colors[4] = color;
+		overlay::lines[3] = overlay::OverlayLine_t(
+			"Geocaches:   ",
+			format_stat(value, max_value),
+			color,
+			color
+		);
 		break;
 	case 5:
-		Base::Data::lines[5] = "Flow meters: ";
-		Base::Data::lines2[5] = format_stat(value, max_value);
-		Base::Data::lines2_colors[5] = color;
+		overlay::lines[4] = overlay::OverlayLine_t(
+			"Flow meters: ",
+			format_stat(value, max_value),
+			color,
+			color
+		);
 		break;
 	default:
 		break;
@@ -318,7 +326,7 @@ auto exclude_inactive_photo_spots(std::string map_name, nlohmann::json mapdata) 
 }
 
 /*
-	This called once before a map is loaded 
+	This called once before a map is loaded
 */
 void __fastcall InitMapStats(void* this_ptr) {
 	InitMapStats_orig(this_ptr);
@@ -327,42 +335,24 @@ void __fastcall InitMapStats(void* this_ptr) {
 		return;
 	}
 
+	overlay::lines.resize(5);
+
 	for (int i = 1; i < 6; ++i) {
-		Base::Data::lines_colors[i] = g_font_color;
-		Base::Data::line_blink[i] = false;
+		overlay::lines[i].nameColor = g_font_color;
+		overlay::lines[i].valueColor = g_font_color;
+		overlay::lines[i].blinksLeft = 0;
 	}
 
-	auto map_name = get_map_name();
-	auto& s = Base::Data::lines[0];
-	s = map_name;
+	const char* map_name = get_map_name();
+	std::string& s = overlay::title.value;
+	s.assign(map_name);
 	transform(s.begin(), s.end(), s.begin(), ::tolower);
 
 	current_mapdata = exclude_inactive_photo_spots(s, g_mapdata);
-	
+
 	for (int i = 0; i < 6; ++i) {
 		init_counter(map_name, i);
 	}
-}
-
-DWORD WINAPI blink_line(LPVOID lpThreadParameter)
-{
-	int line_num = (int)lpThreadParameter;
-
-	if (Base::Data::line_blink[line_num]) {
-		return TRUE;
-	}
-
-	Base::Data::line_blink[line_num] = true;
-
-	for (int i = 0; i < 5; ++i) {
-		Base::Data::lines_colors[line_num] = g_font_color_max;
-		Sleep(500);
-		Base::Data::lines_colors[line_num] = g_font_color;
-		Sleep(500);
-	}
-
-	Base::Data::line_blink[line_num] = false;
-	return TRUE;
 }
 
 int __fastcall StatSuccess(void* this_ptr, int, int event_type, int count, bool is_new) {
@@ -390,15 +380,16 @@ int __fastcall StatSuccess(void* this_ptr, int, int event_type, int count, bool 
 
 	switch (event_type)
 	{
-		case 0: line_idx = 1; break;
-		case 1:	line_idx = 2; break;
-		case 2:	line_idx = 3; break;
-		case 4:	line_idx = 4; break;
-		case 5:	line_idx = 5; break;
-		default: break;
+	case 0: line_idx = 1; break;
+	case 1:	line_idx = 2; break;
+	case 2:	line_idx = 3; break;
+	case 4:	line_idx = 4; break;
+	case 5:	line_idx = 5; break;
+	default: break;
 	}
 
-	CreateThread(nullptr, 0, blink_line, (LPVOID)line_idx, 0, nullptr);
+	overlay::lines[line_idx].blinksLeft = 5;
+	g_LogWriter << "Blinking line " << line_idx << std::endl;
 	return r;
 }
 
@@ -518,16 +509,47 @@ int __fastcall CInfraCameraFreezeFrame__OnCommand(void* thiz, int, void* lpKeyVa
 
 	if (freezeFrame->m_pImage != NULL) {
 		CMatSystemTexture* tex = GetTextureById(freezeFrame->m_pImage->m_nTextureId);
+
+		if (tex == nullptr) {
+			g_LogWriter << "tex was null in " << get_map_name() << std::endl;
+			return ret;
+		}
+
+		CMaterial* mat = tex->m_pMaterial;
+
+		if (mat == nullptr) {
+			g_LogWriter << "mat was null in " << get_map_name() << std::endl;
+			return ret;
+		}
+
+		CTexture* repTex = mat->m_representativeTexture;
+
+		if (repTex == nullptr) {
+			g_LogWriter << "repTex was null in " << get_map_name() << std::endl;
+			return ret;
+		}
+
 		Texture_t** texHandles = tex->m_pMaterial->m_representativeTexture->m_pTextureHandles;
 
-		StretchAndSaveCameraImage(g_Dev, (IDirect3DTexture9 *)texHandles[0]->m_pTexture0, 0);
+		if (texHandles == nullptr) {
+			g_LogWriter << "texHandles was null in " << get_map_name() << std::endl;
+			return ret;
+		}
+
+		if (texHandles[0] == nullptr) {
+			g_LogWriter << "texHandles[0] was null in " << get_map_name() << std::endl;
+			return ret;
+		}
+
+
+		StretchAndSaveCameraImage(g_Dev, (IDirect3DTexture9 *)texHandles[0]->m_pTexture0);
 	}
 
 	return ret;
 }
 
 
-static TCHAR* GetNextImagePath(int index) {
+static TCHAR* GetNextImagePath() {
 	static TCHAR buf[MAX_PATH];
 	DWORD dwAttrib;
 	SYSTEMTIME systemTime;
@@ -545,15 +567,14 @@ static TCHAR* GetNextImagePath(int index) {
 	GetLocalTime(&systemTime);
 
 	swprintf(
-		buf, MAX_PATH, TEXT("DCIM\\%S_%d-%02d-%02d_%02d%02d%02d__%d.jpg"),
-		get_map_name(), systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond,
-		index
+		buf, MAX_PATH, TEXT("DCIM\\%S_%d-%02d-%02d_%02d%02d%02d.jpg"),
+		get_map_name(), systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond
 	);
 
 	return buf;
 }
 
-static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* tex, int index) {
+static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* tex) {
 	IDirect3DTexture9* pRenderTexture = nullptr;
 	IDirect3DSurface9* pRenderSurface = nullptr;
 	IDirect3DSurface9* pSrcSurface = nullptr;
@@ -587,7 +608,7 @@ static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* 
 
 
 	D3DXSaveTextureToFile(
-		GetNextImagePath(index), D3DXIFF_JPG, pRenderTexture, NULL
+		GetNextImagePath(), D3DXIFF_JPG, pRenderTexture, NULL
 	);
 
 	g_LogWriter << "Saved image!" << std::endl;
@@ -596,6 +617,14 @@ release:
 	if (pRenderSurface != nullptr) pRenderSurface->Release();
 	if (pRenderTexture != nullptr) pRenderTexture->Release();
 	if (pSrcSurface != nullptr) pSrcSurface->Release();
+}
+
+HRESULT __stdcall EndScene(LPDIRECT3DDEVICE9 pDevice) {
+	if (overlay::shown && !Base::Hooks::is_in_main_menu() && !Base::Hooks::loading_screen_visible()) {
+		overlay::Render(Base::Data::hWindow, pDevice);
+	}
+
+	return EndScene_orig(pDevice);
 }
 
 bool Base::Hooks::Init() {
@@ -609,10 +638,12 @@ bool Base::Hooks::Init() {
 	}
 
 	if (GetD3D9Device((void**)Data::pDeviceTable, D3DDEV9_LEN)) {
-		Data::pEndScene = Data::pDeviceTable[42];
-
-		MH_CreateHook(Data::pEndScene, &Hooks::EndScene, reinterpret_cast<LPVOID *>(&Data::oEndScene));
-		MH_EnableHook(Data::pEndScene);
+		void* pEndScene = Data::pDeviceTable[42];
+\
+		// MH_CreateHook(Data::pEndScene, &Hooks::EndScene, reinterpret_cast<LPVOID *>(&Data::oEndScene));
+		// MH_EnableHook(Data::pEndScene);
+		MH_CreateHook(pEndScene, &EndScene, reinterpret_cast<LPVOID*>(&EndScene_orig));
+		MH_EnableHook(pEndScene);
 
 		Data::oWndProc  = (WndProc_t)SetWindowLongPtr(Data::hWindow, WNDPROC_INDEX, (LONG_PTR)Hooks::WndProc);
 		hook_game_functions();	
@@ -623,8 +654,7 @@ bool Base::Hooks::Init() {
 	return false;
 }
 
-bool Base::Hooks::Shutdown()
-{
+bool Base::Hooks::Shutdown() {
 	if (Data::InitImGui)
 	{
 		ImGui_ImplDX9_Shutdown();
@@ -637,8 +667,7 @@ bool Base::Hooks::Shutdown()
 	return true;
 }
 
-BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM lParam)
-{
+BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM lParam) {
 	DWORD wndProcId = 0;
 	GetWindowThreadProcessId(handle, &wndProcId);
 
@@ -649,8 +678,7 @@ BOOL CALLBACK EnumWindowsCallback(HWND handle, LPARAM lParam)
 	return FALSE;
 }
 
-HWND GetProcessWindow()
-{
+HWND GetProcessWindow() {
 	Base::Data::hWindow = (HWND)NULL;
 	EnumWindows(EnumWindowsCallback, NULL);
 	return Base::Data::hWindow;

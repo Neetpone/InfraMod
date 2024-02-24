@@ -164,6 +164,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="base.h" />
+    <ClInclude Include="game\overlay.h" />
     <ClInclude Include="game\structs.h" />
     <ClInclude Include="include\font.hpp" />
     <ClInclude Include="include\imgui\imconfig.h" />

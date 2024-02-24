@@ -22,14 +22,12 @@ typedef HRESULT(__stdcall* SetTexture_t)(LPDIRECT3DDEVICE9, DWORD, IDirect3DBase
 extern ImVec4 g_font_color;
 extern ImVec4 g_font_color_max;
 
-namespace Base
-{
+namespace Base {
 	bool Init();
 	bool Shutdown();
 	bool Detach();
 
-	namespace Data
-	{
+	namespace Data {
 		extern HMODULE           hModule;
 		extern LPDIRECT3DDEVICE9 pDxDevice9;
 		extern void*             pDeviceTable[D3DDEV9_LEN];
@@ -45,24 +43,15 @@ namespace Base
 		extern bool Inited;
 
 
-		namespace Keys
-		{
+		namespace Keys {
 			const UINT ToggleMenu = VK_INSERT;
 		}
-
-		extern std::vector<std::string> lines;
-		extern std::vector<ImVec4> lines_colors;
-		extern std::vector<bool> line_blink;
-		extern std::vector<std::string> lines2;
-		extern std::vector<ImVec4> lines2_colors;
-		extern int takeImage;
 	}
 
 	namespace Hooks
 	{
 		bool Init();
 		bool Shutdown();
-		HRESULT __stdcall EndScene(LPDIRECT3DDEVICE9 pDevice);
 		LRESULT CALLBACK  WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 		void hook_game_functions();
 		bool is_in_main_menu();

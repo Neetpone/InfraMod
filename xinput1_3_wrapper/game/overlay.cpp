@@ -1,8 +1,10 @@
 #include "stdafx.h"
 #include <base.h>
+#include "overlay.h"
 #include <font.hpp>
+#include "Utils.h"
+#include <fstream>
 
-bool EndSceneInit = false;
 ImFont* g_font = NULL;
 ImVec2 g_window_size;
 ImVec2 g_window_pos;
@@ -48,18 +50,26 @@ static int ResizeImGui() {
 	return font_size;
 }
 
-HRESULT __stdcall Base::Hooks::EndScene(LPDIRECT3DDEVICE9 pDevice)
-{
-	Data::pDxDevice9 = pDevice;
-	if (!Data::InitImGui)
-	{
+overlay::OverlayLine_t::OverlayLine_t(std::string name, std::string value, ImVec4 nameColor, ImVec4 valueColor) :
+	name(name), value(value), nameColor(nameColor), valueColor(valueColor), blinksLeft(0), lastBlink(-1) {
+}
+
+bool overlay::shown = true;
+overlay::OverlayLine_t overlay::title = overlay::OverlayLine_t();
+std::vector<overlay::OverlayLine_t> overlay::lines = std::vector<overlay::OverlayLine_t>();
+bool overlay::imGuiInitialized = false;
+
+void overlay::Render(HWND hWnd, LPDIRECT3DDEVICE9 pDevice) {
+	long long now;
+
+	if (!overlay::imGuiInitialized) {
 		ImGui::CreateContext();
 		ImGuiIO& io = ImGui::GetIO();
 		io.ConfigFlags = ImGuiConfigFlags_NoMouseCursorChange;
 		io.IniFilename = NULL;
-		ImGui_ImplWin32_Init(Data::hWindow);
+		ImGui_ImplWin32_Init(hWnd);
 		ImGui_ImplDX9_Init(pDevice);
-		Data::InitImGui = true;
+		overlay::imGuiInitialized = true;
 
 		int font_size = ResizeImGui();
 	
@@ -67,21 +77,14 @@ HRESULT __stdcall Base::Hooks::EndScene(LPDIRECT3DDEVICE9 pDevice)
 		g_font = io.Fonts->AddFontFromMemoryCompressedTTF((const void*)DejaVuSansMono_compressed_data,
 			DejaVuSansMono_compressed_size, font_size);
 	}
-	
-	if (!Data::InitImGui) {
-		return Data::oEndScene(pDevice);
-	}
 
 	ResizeImGui();
+	now = CurrentTimeMillis();
 
 	ImGui_ImplDX9_NewFrame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
 
-	if (Data::ShowOverlay &&
-		!Base::Hooks::is_in_main_menu() &&
-		!Base::Hooks::loading_screen_visible())
-	{
 		ImGui::SetNextWindowPos(g_window_pos, ImGuiCond_FirstUseEver);
 		ImGui::SetNextWindowSize(g_window_size, ImGuiCond_FirstUseEver);
 
@@ -97,41 +100,34 @@ HRESULT __stdcall Base::Hooks::EndScene(LPDIRECT3DDEVICE9 pDevice)
 			ImGuiWindowFlags_NoScrollbar | 
 			ImGuiWindowFlags_NoScrollWithMouse);
 
-		ImGui::TextColored(ImVec4(0.40f, 0.40f, 0.40f, 1.00f), Data::lines[0].c_str()); // map name
+		ImGui::TextColored(ImVec4(0.40f, 0.40f, 0.40f, 1.00f), overlay::title.value.c_str()); // map name
 
-		
-		ImGui::TextColored(Data::lines_colors[1], Data::lines[1].c_str());
-		ImGui::SameLine();
-		ImGui::TextColored(Data::lines2_colors[1], Data::lines2[1].c_str());
-		
-		ImGui::TextColored(Data::lines_colors[2], Data::lines[2].c_str());
-		ImGui::SameLine();
-		ImGui::TextColored(Data::lines2_colors[2], Data::lines2[2].c_str());
+		for (int i = 0; i < overlay::lines.size(); i++) {
+			overlay::OverlayLine_t& line = overlay::lines[i];
+			ImVec4 color;
 
-		ImGui::TextColored(Data::lines_colors[3], Data::lines[3].c_str());
-		ImGui::SameLine();
-		ImGui::TextColored(Data::lines2_colors[3], Data::lines2[3].c_str());
+			// Handle blinking the line if necessary
+			if (line.blinksLeft > 0) {
+				color = ((line.blinksLeft % 2) == 0) ? overlay::fontColorMax : overlay::fontColor;
 
-		ImGui::TextColored(Data::lines_colors[4], Data::lines[4].c_str());
-		ImGui::SameLine();
-		ImGui::TextColored(Data::lines2_colors[4], Data::lines2[4].c_str());
+				if ((now - line.lastBlink) >= 500) {
+					line.blinksLeft--;
+					line.lastBlink = now;
+				}
+			}
+			else {
+				color = line.nameColor;
+			}
 
-		ImGui::TextColored(Data::lines_colors[5], Data::lines[5].c_str());
-		ImGui::SameLine();
-		ImGui::TextColored(Data::lines2_colors[5], Data::lines2[5].c_str());
+			ImGui::TextColored(color, line.name.c_str());
+			ImGui::SameLine();
+			ImGui::TextColored(line.valueColor, line.value.c_str());
+		}
 
 		ImGui::End();
-
 		ImGui::PopFont();
-	}
-
-	//ImGui::ShowDemoWindow();
 
 	ImGui::EndFrame();
 	ImGui::Render();
 	ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
-	if(Data::ToDetach)
-		Base::Detach();
-
-	return Data::oEndScene(pDevice);
 }

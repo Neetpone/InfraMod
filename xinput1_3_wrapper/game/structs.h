@@ -4,7 +4,7 @@
 namespace infra {
 	// Various structures reverse-engineered from Infra / its version of the Source engine.
 	namespace structs {
-		// I made these with ReClass
+		// I made these with ReClass.NET
 		class BitmapImage
 		{
 		public:

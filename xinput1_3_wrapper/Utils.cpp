@@ -262,3 +262,21 @@ bool GUIDtoString(std::wstring* out, const GUID &g)
 }
 
 
+long long CurrentTimeMillis() {
+    FILETIME fileTime;
+    long long llNow;
+    GetSystemTimeAsFileTime(&fileTime);
+
+    llNow = (LONGLONG)fileTime.dwLowDateTime + ((LONGLONG)(fileTime.dwHighDateTime) << 32LL);
+
+    // Subtract the number of 100-nanosecond intervals between the
+    // Windows epoch (1601-01-01 00:00:00 UTC) and the Unix epoch (1970-01-01 00:00:00 UTC)
+    const uint64_t windowsEpochOffset = 116444736000000000ULL;
+    llNow -= windowsEpochOffset;
+
+    // Convert 100-nanosecond intervals to milliseconds
+    const uint64_t millisecondsPer100Nanoseconds = 10000ULL;
+    long long milliseconds = llNow / millisecondsPer100Nanoseconds;
+
+    return milliseconds;
+}
