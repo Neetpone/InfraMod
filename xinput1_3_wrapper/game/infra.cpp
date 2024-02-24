@@ -37,28 +37,12 @@ typedef int(__thiscall* StatSuccess_t)(void* this_ptr, int event_type, int count
 StatSuccess_t StatSuccess_orig;
 int __fastcall StatSuccess(void* this_ptr, int, int event_type, int count, bool is_new);
 
-// This gets called when we set up the CInfraCameraFreezeFrame
-typedef void*(__thiscall *CInfraCameraFreezeFrame__new_t)(void* this_ptr, int a2, void* p, int a4);
-CInfraCameraFreezeFrame__new_t CInfraCameraFreezeFrame__new_orig;
-void* __fastcall CInfraCameraFreezeFrame__new(void* this_ptr, int, int a2, void* p, int a4);
-
 // I think this is actually CInfraCamera::OnCommand, but good enough.
 // This gets called when we take a picture.
 typedef int(__thiscall* CInfraCameraFreezeFrame__OnCommand_t)(void* thiz, void* lpKeyValues);
 CInfraCameraFreezeFrame__OnCommand_t CInfraCameraFreezeFrame__OnCommand_orig;
 int __fastcall CInfraCameraFreezeFrame__OnCommand(void* thiz, int, void* lpKeyValues);
 
-typedef void(__thiscall* sub_16D3B0_t)(void* thiz);
-sub_16D3B0_t sub_16D3B0_orig;
-void __fastcall sub_16D3B0(void* thiz);
-
-typedef void(__thiscall* sub_1ADDA0_t)(void* thiz);
-
-
-
-// This is a hook of DirectX's SetTexture() function.
-static SetTexture_t SetTexture_orig;
-void __stdcall SetTexture(LPDIRECT3DDEVICE9 thiz, DWORD Stage, IDirect3DBaseTexture9* pTexture);
 
 /* Hooked functions end */
 
@@ -73,36 +57,11 @@ static GetPlayerByIndex_t GetPlayerByIndex;
 static KeyValues__GetInt_t KeyValues__GetInt;
 static void* g_TextureDictionary;
 static void* g_pShaderApi;
-
 static IDirect3DDevice9* g_Dev;
 
 nlohmann::json current_mapdata;
-static long long g_LastCameraSnap = -1;
-static IDirect3DTexture9* g_CameraTexture = NULL;
-static CInfraCameraFreezeFrame* g_CameraFreezeFrame = nullptr;
 
 static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* tex, int index);
-
-/*
- * State machine explanation:
- * Normally, we're in the state machine IDLE state. This is nothing special, just the "rest" state.
- * 
- * When we take a picture, and it's time for the camera to flash, we transition to TOOK_PICTURE state.
- * 
- * Once we're in TOOK_PICTURE, we wait for the next time the camera screen gets rendered, and that transitions us to RENDERED_ONCE.
- * 
- * In RENDERED_ONCE, this is where we get a bit silly. We monitor SetTexture() calls in Direct3D, and use heuristics to guess which texture is the
- * camera texture. Then, we save it, and go back into IDLE.
- */
-enum CameraState {
-	CS_IDLE,
-	CS_TOOK_PICTURE,
-	CS_RENDERED_ONCE
-};
-
-static LONG g_CameraState = CS_IDLE;
-static int g_StageNumber;
-
 
 static long long CurrentTimeMillis() {
 	FILETIME ft;
@@ -153,9 +112,8 @@ void Base::Hooks::hook_game_functions() {
 
 	FHOOK(InitMapStats, server, 0x297100);
 	FHOOK(StatSuccess, server, 0x2974E0);
-	FHOOK(CInfraCameraFreezeFrame__new, client, 0x1CCB60);
+	//FHOOK(CInfraCameraFreezeFrame__new, client, 0x1CCB60);
 	FHOOK(CInfraCameraFreezeFrame__OnCommand, client, 0x1CCA30);
-	FHOOK(sub_16D3B0, client, 0x16D3B0);
 
 	GlobalEntity_AddEntity = (GlobalEntity_AddEntity_t)((uint32_t)infra::server_base + 0x158A10);
 	GlobalEntity_SetCounter = (GlobalEntity_SetCounter_t)((uint32_t)infra::server_base + 0x158420);
@@ -538,7 +496,6 @@ void SimpleDumpMatSystemTexture(const CMatSystemTexture* pTexture) {
 
 #define PTR_ADD(P, A) ((void *)(((uint32_t) (P)) + (A)))
 
-
 CMatSystemTexture* GetTextureById(int id) {
 	void* textureList = *((void**)PTR_ADD(g_TextureDictionary, 4));
 
@@ -547,31 +504,10 @@ CMatSystemTexture* GetTextureById(int id) {
 	);
 }
 
-
-
-
-// Purpose: Intercept the constructor of CInfraCameraFreezeFrame to capture a pointer to it.
-void* __fastcall CInfraCameraFreezeFrame__new(void* this_ptr, int, int a2, void* p, int a4) {
-	CInfraCameraFreezeFrame *freezeFrame = reinterpret_cast<CInfraCameraFreezeFrame *>(
-		CInfraCameraFreezeFrame__new_orig(this_ptr, a2, p, a4)
-	);
-
-	if (true || g_CameraFreezeFrame == nullptr) {
-		g_CameraFreezeFrame = freezeFrame;
-		g_LogWriter << "Captured CInfraCameraFreezeFrame - sanity check: _panelName: " << freezeFrame->_panelName << " ptr: 0x" << std::hex << g_CameraFreezeFrame << std::dec << std::endl;
-		g_LogWriter.flush();
-
-
-
-	}
-
-	return freezeFrame;
-}
-
 // Purpose: Determine when the CInfraCameraFreezeFrame receives a command.
 int __fastcall CInfraCameraFreezeFrame__OnCommand(void* thiz, int, void* lpKeyValues) {
 	int ret;
-	CInfraCameraFreezeFrame* freezeFrame = g_CameraFreezeFrame;
+	CInfraCameraFreezeFrame* freezeFrame = reinterpret_cast<CInfraCameraFreezeFrame *>(thiz);
 
 	ret = CInfraCameraFreezeFrame__OnCommand_orig(thiz, lpKeyValues);
 
@@ -579,77 +515,17 @@ int __fastcall CInfraCameraFreezeFrame__OnCommand(void* thiz, int, void* lpKeyVa
 	if (KeyValues__GetInt(lpKeyValues, "DoFlash", 0) != 1) {
 		return ret;
 	}
-	void** llL = (void **)PTR_ADD(g_TextureDictionary, 4);
-	void* ll = *llL;
-	g_LogWriter << "ll is at " << ll << std::endl;
-	g_LogWriter << "g_TextureDictionary is at " << std::hex << g_TextureDictionary << std::dec << std::endl;
+
 	if (freezeFrame->m_pImage != NULL) {
-		int startId = freezeFrame->m_pImage->m_nTextureId;
-		int endId = 1;
-
-		g_LogWriter << "freezeFrame is " << HEX(freezeFrame) << std::endl;
-		g_LogWriter << "thiz is " << HEX(thiz) << std::endl;
-		g_LogWriter << "Texture ID is " << startId << std::endl;
-
-		//for (int i = 0; i < startId; i++) {
-		//	SimpleDumpMatSystemTexture(
-		//		GetTextureById(i)
-		//	);
-		//}
-
-		// I am like 17% sure the stupid texture handles are just random garbage numbers
-
-
-		// Current issue: I'm getting the wrong texture pointer, it's just something random - but it IS valid memory.
-		CMatSystemTexture* tex = GetTextureById(startId);
-
+		CMatSystemTexture* tex = GetTextureById(freezeFrame->m_pImage->m_nTextureId);
 		Texture_t** texHandles = tex->m_pMaterial->m_representativeTexture->m_pTextureHandles;
 
-		g_LogWriter << "CMatSystemTexture is at " << HEX(tex) << std::endl;
-		g_LogWriter << "tex->m_pMaterial is at " << HEX(tex->m_pMaterial) << std::endl;
-		g_LogWriter << "tex->m_pMaterial->m_representativeTexture is at " << HEX(tex->m_pMaterial->m_representativeTexture) << std::endl;
-		//g_LogWriter << "potential handles: " << texHandles[0] << ", " << texHandles[1] << std::endl;
-
-		DumpTexture(texHandles[0]);
-
 		StretchAndSaveCameraImage(g_Dev, (IDirect3DTexture9 *)texHandles[0]->m_pTexture0, 0);
-
-		for (int i = endId; i < startId; i++) {
-		//	g_LogWriter << "Texture ID: " << i << std::endl;
-		//	DumpMatSystemTexture(
-		//		GetTextureById(i)
-		//	);
-		}
-	}
-
-	g_LogWriter << "Got DoFlash command" << std::endl;
-
-	// Use cached texture if we have it, otherwise start the dance to get the texture handle out of DirectX :-)
-	if (g_CameraTexture != NULL) {
-		StretchAndSaveCameraImage(g_Dev, g_CameraTexture, 0);
-		g_LogWriter << "Saved image using cached camera texture" << std::endl;
-	}
-	else {
-		//InterlockedExchange(&g_CameraState, CS_TOOK_PICTURE);
-		//g_CameraState = CS_TOOK_PICTURE;
-		g_LogWriter << "Transitioning to CS_TOOK_PICTURE" << std::endl;
 	}
 
 	return ret;
 }
 
-static int g_SetTextureCounter;
-
-// I don't even know what this subroutine it, it's probably CBitmapPanel::DoPaint but I'm not very confident.
-void __fastcall sub_16D3B0(void* thiz) {
-	if (thiz == g_CameraFreezeFrame && InterlockedCompareExchange(&g_CameraState, CS_RENDERED_ONCE, CS_TOOK_PICTURE) == CS_TOOK_PICTURE) {
-		//g_CameraState = CS_RENDERED_ONCE;
-		g_SetTextureCounter = 0;
-		g_LogWriter << "Transitioning to CS_RENDERED_ONCE from thread " << GetCurrentThreadId() << std::endl;
-	}
-
-	sub_16D3B0_orig(thiz);
-}
 
 static TCHAR* GetNextImagePath(int index) {
 	static TCHAR buf[MAX_PATH];
@@ -722,83 +598,6 @@ release:
 	if (pSrcSurface != nullptr) pSrcSurface->Release();
 }
 
-// Purpose: Hook Direct3D SetTexture() and use heuristics to capture the DirectX texture handle used for the camera screen.
-void __stdcall SetTexture(LPDIRECT3DDEVICE9 thiz, DWORD Stage, IDirect3DBaseTexture9* pBaseTexture) {
-	int dummy;
-	int* addr;
-	int i;
-	D3DSURFACE_DESC surfaceDesc;
-	IDirect3DTexture9* pTexture;
-
-	SetTexture_orig(thiz, Stage, pBaseTexture);
-
-	if (g_CameraState != CS_RENDERED_ONCE) {
-		return;
-	}
-
-	if (pBaseTexture == nullptr) {
-		return;
-	}
-
-	// Please for the love of h*ck never be on stage 0, this is the only heuristic I have, please dear Gods.
-	if (Stage == 0) {
-		//return;
-	}
-
-	//if (pBaseTexture->GetLevelCount() > 1) {
-		//g_LogWriter << "Wrong level count" << std::endl;
-	//	return;
-	//}
-
-	//if (!SUCCEEDED(pBaseTexture->QueryInterface(__uuidof(IDirect3DTexture9), (void**)&pTexture))) {
-		//g_LogWriter << "No QueryInterface()" << std::endl;
-
-//		return;
-	//}
-
-	pTexture = (IDirect3DTexture9*)pBaseTexture;
-
-	//goto release;
-
-	memset(&surfaceDesc, 0, sizeof(surfaceDesc));
-
-	if (pTexture->GetLevelDesc(0, &surfaceDesc) != D3D_OK) {
-		//g_LogWriter << "No GetLevelDesc()" << std::endl;
-
-		return;
-	}
-
-	if (surfaceDesc.Width != 1024 || surfaceDesc.Height != 1024) {
-		//g_LogWriter << "Wrong size" << std::endl;
-
-		return;
-	}
-
-	// Future me: If you want to get to a known good state, load the first map and take a picture of the no fishing sign outside your car.
-	// That should be loaded onto Stage 2.
-	if (surfaceDesc.Format != D3DFMT_A8R8G8B8 || surfaceDesc.MultiSampleQuality != 0 || surfaceDesc.MultiSampleType != 0 || surfaceDesc.Type != D3DRTYPE_SURFACE || surfaceDesc.Usage != 1) {
-		//g_LogWriter << "Wrong formats" << std::endl;
-
-		return;
-	}
-
-	g_LogWriter << "SetTexture(): " << Stage << " " << pBaseTexture << " (counter: " << g_SetTextureCounter << ")" << std::endl;
-	g_LogWriter << "Format: " << surfaceDesc.Format << ", MSQ: " << surfaceDesc.MultiSampleQuality << ", MST: " << surfaceDesc.MultiSampleType <<
-		", Type: " << surfaceDesc.Type << ", Usage: " << surfaceDesc.Usage << ", thread: " << GetCurrentThreadId() << std::endl;
-	g_LogWriter.flush();
-
-	//if (g_SetTextureCounter > 5) {
-		g_CameraState = CS_IDLE;
-	//}
-
-	// g_CameraTexture = pTexture;
-	StretchAndSaveCameraImage(
-		g_Dev, pTexture, g_SetTextureCounter
-	);
-
-	g_SetTextureCounter++;
-}
-
 bool Base::Hooks::Init() {
 	infra::server_base = NULL;
 	infra::engine_base = NULL;
@@ -810,15 +609,10 @@ bool Base::Hooks::Init() {
 	}
 
 	if (GetD3D9Device((void**)Data::pDeviceTable, D3DDEV9_LEN)) {
-		// Sleep(3000); // give some time for the game engine to initialize its structures
 		Data::pEndScene = Data::pDeviceTable[42];
 
 		MH_CreateHook(Data::pEndScene, &Hooks::EndScene, reinterpret_cast<LPVOID *>(&Data::oEndScene));
 		MH_EnableHook(Data::pEndScene);
-
-		// SetTexture hook
-		MH_CreateHook(Data::pDeviceTable[65], &SetTexture, reinterpret_cast<LPVOID*>(&SetTexture_orig));
-		MH_EnableHook(Data::pDeviceTable[65]);
 
 		Data::oWndProc  = (WndProc_t)SetWindowLongPtr(Data::hWindow, WNDPROC_INDEX, (LONG_PTR)Hooks::WndProc);
 		hook_game_functions();	
