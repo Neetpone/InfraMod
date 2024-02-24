@@ -61,6 +61,8 @@ static KeyValues__GetInt_t KeyValues__GetInt;
 static void* g_TextureDictionary;
 static void* g_pShaderApi;
 static IDirect3DDevice9* g_Dev;
+static CInfraCameraFreezeFrame* g_FreezeFrame;
+static unsigned int g_ShouldSaveImage; // Set to 1 by our other thread when it's time to save the image, then the Direct3D thread does the actual saving.
 
 nlohmann::json current_mapdata;
 
@@ -389,7 +391,6 @@ int __fastcall StatSuccess(void* this_ptr, int, int event_type, int count, bool 
 	}
 
 	overlay::lines[line_idx].blinksLeft = 5;
-	g_LogWriter << "Blinking line " << line_idx << std::endl;
 	return r;
 }
 
@@ -507,44 +508,11 @@ int __fastcall CInfraCameraFreezeFrame__OnCommand(void* thiz, int, void* lpKeyVa
 		return ret;
 	}
 
-	if (freezeFrame->m_pImage != NULL) {
-		CMatSystemTexture* tex = GetTextureById(freezeFrame->m_pImage->m_nTextureId);
+	g_FreezeFrame = freezeFrame;
 
-		if (tex == nullptr) {
-			g_LogWriter << "tex was null in " << get_map_name() << std::endl;
-			return ret;
-		}
-
-		CMaterial* mat = tex->m_pMaterial;
-
-		if (mat == nullptr) {
-			g_LogWriter << "mat was null in " << get_map_name() << std::endl;
-			return ret;
-		}
-
-		CTexture* repTex = mat->m_representativeTexture;
-
-		if (repTex == nullptr) {
-			g_LogWriter << "repTex was null in " << get_map_name() << std::endl;
-			return ret;
-		}
-
-		Texture_t** texHandles = tex->m_pMaterial->m_representativeTexture->m_pTextureHandles;
-
-		if (texHandles == nullptr) {
-			g_LogWriter << "texHandles was null in " << get_map_name() << std::endl;
-			return ret;
-		}
-
-		if (texHandles[0] == nullptr) {
-			g_LogWriter << "texHandles[0] was null in " << get_map_name() << std::endl;
-			return ret;
-		}
-
-
-		StretchAndSaveCameraImage(g_Dev, (IDirect3DTexture9 *)texHandles[0]->m_pTexture0);
-	}
-
+	// OnCommand actually gets run from a different thread than the DirectX thread, so we latch this in
+	// in order to then check from the DirectX thread and do the save.
+	InterlockedCompareExchange(&g_ShouldSaveImage, 1, 0);
 	return ret;
 }
 
@@ -619,7 +587,51 @@ release:
 	if (pSrcSurface != nullptr) pSrcSurface->Release();
 }
 
+static void ExtractAndSaveCameraImage(CInfraCameraFreezeFrame *freezeFrame) {
+	if (freezeFrame->m_pImage != NULL) {
+		CMatSystemTexture* tex = GetTextureById(freezeFrame->m_pImage->m_nTextureId);
+
+		if (tex == nullptr) {
+			g_LogWriter << "tex was null in " << get_map_name() << std::endl;
+			return;
+		}
+
+		CMaterial* mat = tex->m_pMaterial;
+
+		if (mat == nullptr) {
+			g_LogWriter << "mat was null in " << get_map_name() << std::endl;
+			return;
+		}
+
+		CTexture* repTex = mat->m_representativeTexture;
+
+		if (repTex == nullptr) {
+			g_LogWriter << "repTex was null in " << get_map_name() << std::endl;
+			return;
+		}
+
+		Texture_t** texHandles = tex->m_pMaterial->m_representativeTexture->m_pTextureHandles;
+
+		if (texHandles == nullptr) {
+			g_LogWriter << "texHandles was null in " << get_map_name() << std::endl;
+			return;
+		}
+
+		if (texHandles[0] == nullptr) {
+			g_LogWriter << "texHandles[0] was null in " << get_map_name() << std::endl;
+			return;
+		}
+
+
+		StretchAndSaveCameraImage(g_Dev, (IDirect3DTexture9*)texHandles[0]->m_pTexture0);
+	}
+}
+
 HRESULT __stdcall EndScene(LPDIRECT3DDEVICE9 pDevice) {
+	if (InterlockedCompareExchange(&g_ShouldSaveImage, 0, 1)) {
+		ExtractAndSaveCameraImage(g_FreezeFrame);
+	}
+
 	if (overlay::shown && !Base::Hooks::is_in_main_menu() && !Base::Hooks::loading_screen_visible()) {
 		overlay::Render(Base::Data::hWindow, pDevice);
 	}
