@@ -25,8 +25,13 @@ mod::mod() {
 }
 
 bool mod::load(sdk::create_interface_fn interface_factory, sdk::create_interface_fn game_server_factory) {
-	Base::Data::hModule = GetCurrentModule();
-	Base::Init();
+
+
+	//AllocConsole();
+
+	//freopen_s(reinterpret_cast<_iobuf**>(__acrt_iob_func(0)), "conin$", "r", static_cast<_iobuf*>(__acrt_iob_func(0)));
+	//freopen_s(reinterpret_cast<_iobuf**>(__acrt_iob_func(1)), "conout$", "w", static_cast<_iobuf*>(__acrt_iob_func(1)));
+	//freopen_s(reinterpret_cast<_iobuf**>(__acrt_iob_func(2)), "conout$", "w", static_cast<_iobuf*>(__acrt_iob_func(2)));
 	
 	return true;
 }
@@ -43,6 +48,11 @@ const char* mod::get_plugin_description() {
 }
 
 void mod::level_init(char const* map_name) {
+	if (!Base::Data::Inited) {
+		Base::Data::hModule = GetCurrentModule();
+		Base::Init();
+		Base::Data::Inited = true;
+	}
 }
 
 void mod::server_activate(void* edict_list, int edict_count, int client_max) {}

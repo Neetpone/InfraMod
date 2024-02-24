@@ -42,6 +42,8 @@ namespace Base
 		extern bool              ToDetach;
 		extern bool              InitImGui;
 		extern bool              ShowOverlay;
+		extern bool Inited;
+
 
 		namespace Keys
 		{

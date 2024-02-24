@@ -5,9 +5,7 @@
 #include <fstream>
 #include "structs.h"
 
-using infra::structs::BitmapImage;
-using infra::structs::CInfraCameraFreezeFrame;
-
+using namespace infra::structs;
 using namespace infra::functions;
 
 namespace infra
@@ -15,10 +13,14 @@ namespace infra
 	void* server_base;
 	void* engine_base;
 	void* client_base;
+
+	void* vguimatsurface_base;
+	void* materialsystem_base;
 };
 
 static std::ofstream g_LogWriter = std::ofstream();
 
+#define HEX(X) std::hex << (X) << std::dec
 
 bool g_server_spawned = false;
 
@@ -69,6 +71,8 @@ static GlobalEntity_GetState_t GlobalEntity_GetState;
 static GlobalEntity_SetState_t GlobalEntity_SetState;
 static GetPlayerByIndex_t GetPlayerByIndex;
 static KeyValues__GetInt_t KeyValues__GetInt;
+static void* g_TextureDictionary;
+static void* g_pShaderApi;
 
 static IDirect3DDevice9* g_Dev;
 
@@ -77,7 +81,7 @@ static long long g_LastCameraSnap = -1;
 static IDirect3DTexture9* g_CameraTexture = NULL;
 static CInfraCameraFreezeFrame* g_CameraFreezeFrame = nullptr;
 
-static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* tex);
+static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* tex, int index);
 
 /*
  * State machine explanation:
@@ -96,7 +100,7 @@ enum CameraState {
 	CS_RENDERED_ONCE
 };
 
-static CameraState g_CameraState = CS_IDLE;
+static LONG g_CameraState = CS_IDLE;
 static int g_StageNumber;
 
 
@@ -108,38 +112,34 @@ static long long CurrentTimeMillis() {
 	return ((LONGLONG)ft.dwLowDateTime + ((LONGLONG)(ft.dwHighDateTime) << 32LL)) / 10000;
 }
 
+void* GetModuleAddress(const char* name) {
+	void* addr;
+
+	while (true) {
+		addr = (void*)GetModuleHandleA(name);
+		if (addr) {
+			break;
+		}
+
+		Sleep(500);
+	}
+
+	return addr;
+}
+
 void Base::Hooks::hook_game_functions() {
 
-	g_LogWriter.open("LOG.TXT", std::ios_base::out | std::ios_base::app);
+	g_LogWriter.open("LOG.TXT", std::ios_base::out);
 
 	g_LogWriter << "LOG BEGIN" << std::endl;
 
-	while (true) {
-		Sleep(500);
+	infra::server_base = GetModuleAddress("server.dll");
+	infra::engine_base = GetModuleAddress("engine.dll");
+	infra::client_base = GetModuleAddress("client.dll");
+	infra::vguimatsurface_base = GetModuleAddress("vguimatsurface.dll");
+	infra::materialsystem_base = GetModuleAddress("MaterialSystem.dll");
 
-		void* base = (void*)GetModuleHandleA("server.dll");
-
-		if (!base) {
-			continue;
-		}
-
-		infra::server_base = base;
-
-		base = (void*)GetModuleHandleA("engine.dll");
-		if (!base) {
-			continue;
-		}
-
-		infra::engine_base = base;
-
-		base = (void*)GetModuleHandleA("client.dll");
-		if (!base) {
-			continue;
-		}
-
-		infra::client_base = base;
-		break;
-	}
+	g_LogWriter << "vguimatsurface.dll is at " << std::hex << infra::vguimatsurface_base << std::dec << std::endl;
 
 #define FHOOK(fname, libname, offset) \
 	auto fname##_ptr = (void*)((uint32_t)infra::libname##_base + offset); \
@@ -165,6 +165,9 @@ void Base::Hooks::hook_game_functions() {
 	GlobalEntity_SetState = (GlobalEntity_SetState_t)((uint32_t)infra::server_base + 0x1583F0);
 	GetPlayerByIndex = (GetPlayerByIndex_t)((uint32_t)infra::client_base + 0x51DD0);
 	KeyValues__GetInt = (KeyValues__GetInt_t)((uint32_t)infra::client_base + 0x3A0840);
+	g_TextureDictionary = (void*)((uint32_t)infra::vguimatsurface_base + 0x1432D0);
+	g_pShaderApi = (void*)((uint32_t)infra::materialsystem_base + 0x1194A8);
+
 
 	try {
 		std::ifstream f("mapdata.txt");
@@ -441,16 +444,125 @@ int __fastcall StatSuccess(void* this_ptr, int, int event_type, int count, bool 
 	return r;
 }
 
+void DumpMatSystemTexture(const CMatSystemTexture* pTexture) {
+	if (!pTexture) {
+		g_LogWriter << "CMatSystemTexture@0x00 { nullptr }" << std::endl;
+		return;
+	}
+
+	g_LogWriter << "CMatSystemTexture@" << pTexture << " {" << std::endl;
+	g_LogWriter << "    m_s0: " << pTexture->m_s0 << std::endl;
+	g_LogWriter << "    m_t0: " << pTexture->m_t0 << std::endl;
+	g_LogWriter << "    m_s1: " << pTexture->m_s1 << std::endl;
+	g_LogWriter << "    m_t1: " << pTexture->m_t1 << std::endl;
+	g_LogWriter << "    m_crcFile: " << pTexture->m_crcFile << std::endl;
+	g_LogWriter << "    m_pMaterial: " << pTexture->m_pMaterial << std::endl;
+	g_LogWriter << "    m_pTexture: " << pTexture->m_pTexture << std::endl;
+	g_LogWriter << "    m_Texture2: " << pTexture->m_Texture2 << std::endl;
+	g_LogWriter << "    m_iWide: " << pTexture->m_iWide << std::endl;
+	g_LogWriter << "    m_iTall: " << pTexture->m_iTall << std::endl;
+	g_LogWriter << "    m_iInputWide: " << pTexture->m_iInputWide << std::endl;
+	g_LogWriter << "    m_iInputTall: " << pTexture->m_iInputTall << std::endl;
+	g_LogWriter << "    m_ID: " << pTexture->m_ID << std::endl;
+	g_LogWriter << "    m_Flags: " << pTexture->m_Flags << std::endl;
+	g_LogWriter << "    m_pRegen: " << pTexture->m_pRegen << std::endl;
+	g_LogWriter << "}" << std::endl;
+}
+
+void DumpTexture(const Texture_t* pTexture) {
+	if (!pTexture) {
+		g_LogWriter << "Texture_t@0x00 { nullptr }" << std::endl;
+		return;
+	}
+
+	g_LogWriter << "Texture_t@" << pTexture << " {" << std::endl;
+	g_LogWriter << "    m_UTexWrap: " << static_cast<int>(pTexture->m_UTexWrap) << std::endl;
+	g_LogWriter << "    m_VTexWrap: " << static_cast<int>(pTexture->m_VTexWrap) << std::endl;
+	g_LogWriter << "    m_WTexWrap: " << static_cast<int>(pTexture->m_WTexWrap) << std::endl;
+	g_LogWriter << "    m_MagFilter: " << static_cast<int>(pTexture->m_MagFilter) << std::endl;
+	g_LogWriter << "    m_MinFilter: " << static_cast<int>(pTexture->m_MinFilter) << std::endl;
+	g_LogWriter << "    m_MipFilter: " << static_cast<int>(pTexture->m_MipFilter) << std::endl;
+	g_LogWriter << "    m_NumLevels: " << static_cast<int>(pTexture->m_NumLevels) << std::endl;
+	g_LogWriter << "    m_SwitchNeeded: " << static_cast<int>(pTexture->m_SwitchNeeded) << std::endl;
+	g_LogWriter << "    m_NumCopies: " << static_cast<int>(pTexture->m_NumCopies) << std::endl;
+	g_LogWriter << "    m_CurrentCopy: " << static_cast<int>(pTexture->m_CurrentCopy) << std::endl;
+	g_LogWriter << "    m_pTexture0: " << pTexture->m_pTexture0 << std::endl;
+	g_LogWriter << "    m_pTexture1: " << pTexture->m_pTexture1 << std::endl;
+	g_LogWriter << "    m_CreationFlags: " << pTexture->m_CreationFlags << std::endl;
+	g_LogWriter << "    m_DebugName: " << pTexture->m_DebugName << std::endl;
+	g_LogWriter << "    m_TextureGroupName: " << pTexture->m_TextureGroupName << std::endl;
+	g_LogWriter << "    m_SizeBytes: " << pTexture->m_SizeBytes << std::endl;
+	g_LogWriter << "    m_SizeTexels: " << pTexture->m_SizeTexels << std::endl;
+	g_LogWriter << "    m_LastBoundFrame: " << pTexture->m_LastBoundFrame << std::endl;
+	g_LogWriter << "    m_nTimesBoundMax: " << pTexture->m_nTimesBoundMax << std::endl;
+	g_LogWriter << "    m_nTimesBoundThisFrame: " << pTexture->m_nTimesBoundThisFrame << std::endl;
+	g_LogWriter << "    m_Width: " << pTexture->m_Width << std::endl;
+	g_LogWriter << "    m_Height: " << pTexture->m_Height << std::endl;
+	g_LogWriter << "    m_Depth: " << pTexture->m_Depth << std::endl;
+	g_LogWriter << "    m_Flags: " << pTexture->m_Flags << std::endl;
+	g_LogWriter << "}" << std::endl;
+}
+
+void SimpleDumpMatSystemTexture(const CMatSystemTexture* pTexture) {
+	if (!pTexture) {
+		g_LogWriter << "CMatSystemTexture@0x00 { nullptr }" << std::endl;
+		return;
+	}
+
+	g_LogWriter << "CMatSystemTexture@" << pTexture << " {" << std::endl;
+	if (pTexture->m_pMaterial) {
+		g_LogWriter << "    m_pMaterial: CMaterial@" << HEX(pTexture->m_pMaterial) << " {" << std::endl;
+
+		if (pTexture->m_pMaterial->m_representativeTexture) {
+			g_LogWriter << "        m_representativeTexture: CTexture@" << HEX(pTexture->m_pMaterial->m_representativeTexture) << " {" << std::endl;
+			if (pTexture->m_pMaterial->m_representativeTexture->m_pTextureHandles) {
+				g_LogWriter << "            m_pTextureHandles[0]: " << pTexture->m_pMaterial->m_representativeTexture->m_pTextureHandles[0] << std::endl;
+			}
+			else {
+				g_LogWriter << "            m_pTextureHandles: nullptr" << std::endl;
+			}
+			g_LogWriter << "        }" << std::endl;
+		}
+		else {
+			g_LogWriter << "        m_representativeTexture: CTexture@0x00 { nullptr }" << std::endl;
+		}
+
+		g_LogWriter << "    }" << std::endl;
+	}
+	else {
+		g_LogWriter << "    m_pMaterial: CMaterial@0x00 { nullptr }" << std::endl;
+	}
+	g_LogWriter << "}" << std::endl;
+
+}
+
+#define PTR_ADD(P, A) ((void *)(((uint32_t) (P)) + (A)))
+
+
+CMatSystemTexture* GetTextureById(int id) {
+	void* textureList = *((void**)PTR_ADD(g_TextureDictionary, 4));
+
+	return reinterpret_cast<CMatSystemTexture*>(
+		PTR_ADD(textureList, id << 6)
+	);
+}
+
+
+
+
 // Purpose: Intercept the constructor of CInfraCameraFreezeFrame to capture a pointer to it.
 void* __fastcall CInfraCameraFreezeFrame__new(void* this_ptr, int, int a2, void* p, int a4) {
 	CInfraCameraFreezeFrame *freezeFrame = reinterpret_cast<CInfraCameraFreezeFrame *>(
 		CInfraCameraFreezeFrame__new_orig(this_ptr, a2, p, a4)
 	);
 
-	if (g_CameraFreezeFrame == nullptr) {
+	if (true || g_CameraFreezeFrame == nullptr) {
 		g_CameraFreezeFrame = freezeFrame;
-		g_LogWriter << "Captured CInfraCameraFreezeFrame - sanity check: _panelName: " << freezeFrame->_panelName << " ptr: 0x" << std::hex << g_CameraFreezeFrame << std::endl;
+		g_LogWriter << "Captured CInfraCameraFreezeFrame - sanity check: _panelName: " << freezeFrame->_panelName << " ptr: 0x" << std::hex << g_CameraFreezeFrame << std::dec << std::endl;
 		g_LogWriter.flush();
+
+
+
 	}
 
 	return freezeFrame;
@@ -459,6 +571,7 @@ void* __fastcall CInfraCameraFreezeFrame__new(void* this_ptr, int, int a2, void*
 // Purpose: Determine when the CInfraCameraFreezeFrame receives a command.
 int __fastcall CInfraCameraFreezeFrame__OnCommand(void* thiz, int, void* lpKeyValues) {
 	int ret;
+	CInfraCameraFreezeFrame* freezeFrame = g_CameraFreezeFrame;
 
 	ret = CInfraCameraFreezeFrame__OnCommand_orig(thiz, lpKeyValues);
 
@@ -466,28 +579,79 @@ int __fastcall CInfraCameraFreezeFrame__OnCommand(void* thiz, int, void* lpKeyVa
 	if (KeyValues__GetInt(lpKeyValues, "DoFlash", 0) != 1) {
 		return ret;
 	}
+	void** llL = (void **)PTR_ADD(g_TextureDictionary, 4);
+	void* ll = *llL;
+	g_LogWriter << "ll is at " << ll << std::endl;
+	g_LogWriter << "g_TextureDictionary is at " << std::hex << g_TextureDictionary << std::dec << std::endl;
+	if (freezeFrame->m_pImage != NULL) {
+		int startId = freezeFrame->m_pImage->m_nTextureId;
+		int endId = 1;
+
+		g_LogWriter << "freezeFrame is " << HEX(freezeFrame) << std::endl;
+		g_LogWriter << "thiz is " << HEX(thiz) << std::endl;
+		g_LogWriter << "Texture ID is " << startId << std::endl;
+
+		//for (int i = 0; i < startId; i++) {
+		//	SimpleDumpMatSystemTexture(
+		//		GetTextureById(i)
+		//	);
+		//}
+
+		// I am like 17% sure the stupid texture handles are just random garbage numbers
+
+
+		// Current issue: I'm getting the wrong texture pointer, it's just something random - but it IS valid memory.
+		CMatSystemTexture* tex = GetTextureById(startId);
+
+		Texture_t** texHandles = tex->m_pMaterial->m_representativeTexture->m_pTextureHandles;
+
+		g_LogWriter << "CMatSystemTexture is at " << HEX(tex) << std::endl;
+		g_LogWriter << "tex->m_pMaterial is at " << HEX(tex->m_pMaterial) << std::endl;
+		g_LogWriter << "tex->m_pMaterial->m_representativeTexture is at " << HEX(tex->m_pMaterial->m_representativeTexture) << std::endl;
+		//g_LogWriter << "potential handles: " << texHandles[0] << ", " << texHandles[1] << std::endl;
+
+		DumpTexture(texHandles[0]);
+
+		StretchAndSaveCameraImage(g_Dev, (IDirect3DTexture9 *)texHandles[0]->m_pTexture0, 0);
+
+		for (int i = endId; i < startId; i++) {
+		//	g_LogWriter << "Texture ID: " << i << std::endl;
+		//	DumpMatSystemTexture(
+		//		GetTextureById(i)
+		//	);
+		}
+	}
+
+	g_LogWriter << "Got DoFlash command" << std::endl;
 
 	// Use cached texture if we have it, otherwise start the dance to get the texture handle out of DirectX :-)
 	if (g_CameraTexture != NULL) {
-		StretchAndSaveCameraImage(g_Dev, g_CameraTexture);
+		StretchAndSaveCameraImage(g_Dev, g_CameraTexture, 0);
+		g_LogWriter << "Saved image using cached camera texture" << std::endl;
 	}
 	else {
-		g_CameraState = CS_TOOK_PICTURE;
+		//InterlockedExchange(&g_CameraState, CS_TOOK_PICTURE);
+		//g_CameraState = CS_TOOK_PICTURE;
+		g_LogWriter << "Transitioning to CS_TOOK_PICTURE" << std::endl;
 	}
 
 	return ret;
 }
 
+static int g_SetTextureCounter;
+
 // I don't even know what this subroutine it, it's probably CBitmapPanel::DoPaint but I'm not very confident.
 void __fastcall sub_16D3B0(void* thiz) {
-	if (thiz == g_CameraFreezeFrame && g_CameraState == CS_TOOK_PICTURE) {
-		g_CameraState = CS_RENDERED_ONCE;
+	if (thiz == g_CameraFreezeFrame && InterlockedCompareExchange(&g_CameraState, CS_RENDERED_ONCE, CS_TOOK_PICTURE) == CS_TOOK_PICTURE) {
+		//g_CameraState = CS_RENDERED_ONCE;
+		g_SetTextureCounter = 0;
+		g_LogWriter << "Transitioning to CS_RENDERED_ONCE from thread " << GetCurrentThreadId() << std::endl;
 	}
 
 	sub_16D3B0_orig(thiz);
 }
 
-static TCHAR* GetNextImagePath() {
+static TCHAR* GetNextImagePath(int index) {
 	static TCHAR buf[MAX_PATH];
 	DWORD dwAttrib;
 	SYSTEMTIME systemTime;
@@ -505,14 +669,15 @@ static TCHAR* GetNextImagePath() {
 	GetLocalTime(&systemTime);
 
 	swprintf(
-		buf, MAX_PATH, TEXT("DCIM\\%S_%d-%02d-%02d_%02d%02d%02d.jpg"),
-		get_map_name(), systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond
+		buf, MAX_PATH, TEXT("DCIM\\%S_%d-%02d-%02d_%02d%02d%02d__%d.jpg"),
+		get_map_name(), systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond,
+		index
 	);
 
 	return buf;
 }
 
-static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* tex) {
+static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* tex, int index) {
 	IDirect3DTexture9* pRenderTexture = nullptr;
 	IDirect3DSurface9* pRenderSurface = nullptr;
 	IDirect3DSurface9* pSrcSurface = nullptr;
@@ -546,8 +711,10 @@ static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* 
 
 
 	D3DXSaveTextureToFile(
-		GetNextImagePath(), D3DXIFF_JPG, pRenderTexture, NULL
+		GetNextImagePath(index), D3DXIFF_JPG, pRenderTexture, NULL
 	);
+
+	g_LogWriter << "Saved image!" << std::endl;
 
 release:
 	if (pRenderSurface != nullptr) pRenderSurface->Release();
@@ -557,6 +724,9 @@ release:
 
 // Purpose: Hook Direct3D SetTexture() and use heuristics to capture the DirectX texture handle used for the camera screen.
 void __stdcall SetTexture(LPDIRECT3DDEVICE9 thiz, DWORD Stage, IDirect3DBaseTexture9* pBaseTexture) {
+	int dummy;
+	int* addr;
+	int i;
 	D3DSURFACE_DESC surfaceDesc;
 	IDirect3DTexture9* pTexture;
 
@@ -570,41 +740,63 @@ void __stdcall SetTexture(LPDIRECT3DDEVICE9 thiz, DWORD Stage, IDirect3DBaseText
 		return;
 	}
 
-	if (pBaseTexture->GetLevelCount() > 1) {
-		return;
+	// Please for the love of h*ck never be on stage 0, this is the only heuristic I have, please dear Gods.
+	if (Stage == 0) {
+		//return;
 	}
 
-	if (!SUCCEEDED(pBaseTexture->QueryInterface(__uuidof(IDirect3DTexture9), (void**)&pTexture))) {
-		return;
-	}
+	//if (pBaseTexture->GetLevelCount() > 1) {
+		//g_LogWriter << "Wrong level count" << std::endl;
+	//	return;
+	//}
+
+	//if (!SUCCEEDED(pBaseTexture->QueryInterface(__uuidof(IDirect3DTexture9), (void**)&pTexture))) {
+		//g_LogWriter << "No QueryInterface()" << std::endl;
+
+//		return;
+	//}
+
+	pTexture = (IDirect3DTexture9*)pBaseTexture;
+
+	//goto release;
 
 	memset(&surfaceDesc, 0, sizeof(surfaceDesc));
 
 	if (pTexture->GetLevelDesc(0, &surfaceDesc) != D3D_OK) {
-		goto release;
+		//g_LogWriter << "No GetLevelDesc()" << std::endl;
+
+		return;
 	}
 
 	if (surfaceDesc.Width != 1024 || surfaceDesc.Height != 1024) {
-		goto release;
+		//g_LogWriter << "Wrong size" << std::endl;
+
+		return;
 	}
 
-	// TODO: Check if it ever ends up on another stage :-)
-	if (Stage != 2) {
-		goto release;
+	// Future me: If you want to get to a known good state, load the first map and take a picture of the no fishing sign outside your car.
+	// That should be loaded onto Stage 2.
+	if (surfaceDesc.Format != D3DFMT_A8R8G8B8 || surfaceDesc.MultiSampleQuality != 0 || surfaceDesc.MultiSampleType != 0 || surfaceDesc.Type != D3DRTYPE_SURFACE || surfaceDesc.Usage != 1) {
+		//g_LogWriter << "Wrong formats" << std::endl;
+
+		return;
 	}
 
-	g_LogWriter << "SetTexture(): " << Stage << " " << pBaseTexture << std::endl;
+	g_LogWriter << "SetTexture(): " << Stage << " " << pBaseTexture << " (counter: " << g_SetTextureCounter << ")" << std::endl;
+	g_LogWriter << "Format: " << surfaceDesc.Format << ", MSQ: " << surfaceDesc.MultiSampleQuality << ", MST: " << surfaceDesc.MultiSampleType <<
+		", Type: " << surfaceDesc.Type << ", Usage: " << surfaceDesc.Usage << ", thread: " << GetCurrentThreadId() << std::endl;
 	g_LogWriter.flush();
 
-	g_CameraTexture = pTexture;
+	//if (g_SetTextureCounter > 5) {
+		g_CameraState = CS_IDLE;
+	//}
+
+	// g_CameraTexture = pTexture;
 	StretchAndSaveCameraImage(
-		g_Dev, pTexture
+		g_Dev, pTexture, g_SetTextureCounter
 	);
 
-	g_CameraState = CS_IDLE;
-	return;
-release:
-	pTexture->Release();
+	g_SetTextureCounter++;
 }
 
 bool Base::Hooks::Init() {
@@ -618,7 +810,7 @@ bool Base::Hooks::Init() {
 	}
 
 	if (GetD3D9Device((void**)Data::pDeviceTable, D3DDEV9_LEN)) {
-		Sleep(3000); // give some time for the game engine to initialize its structures
+		// Sleep(3000); // give some time for the game engine to initialize its structures
 		Data::pEndScene = Data::pDeviceTable[42];
 
 		MH_CreateHook(Data::pEndScene, &Hooks::EndScene, reinterpret_cast<LPVOID *>(&Data::oEndScene));

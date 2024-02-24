@@ -7,6 +7,47 @@ ImFont* g_font = NULL;
 ImVec2 g_window_size;
 ImVec2 g_window_pos;
 
+static int ResizeImGui() {
+	RECT rect;
+	int font_size = 12;
+
+	if (GetClientRect(Base::Data::hWindow, &rect)) {
+		int width = rect.right - rect.left;
+		int height = rect.bottom - rect.top;
+
+		switch (width) {
+		case 1176:
+			font_size = 6;
+			break;
+		case 1280:
+		case 1360:
+		case 1366:
+			font_size = 7;
+			break;
+		case 1600:
+			font_size = 9;
+			break;
+		case 1768:
+			font_size = 10;
+			break;
+		case 1920:
+			font_size = 12;
+			break;
+		case 2560:
+			font_size = 18;
+			break;
+		case 3840:
+			font_size = 30;
+			break;
+		}
+
+		g_window_size = ImVec2(width * 0.1, height * 0.1);
+		g_window_pos = ImVec2(width - g_window_size.x - 10, height - g_window_size.y - 10);
+	}
+
+	return font_size;
+}
+
 HRESULT __stdcall Base::Hooks::EndScene(LPDIRECT3DDEVICE9 pDevice)
 {
 	Data::pDxDevice9 = pDevice;
@@ -20,42 +61,8 @@ HRESULT __stdcall Base::Hooks::EndScene(LPDIRECT3DDEVICE9 pDevice)
 		ImGui_ImplDX9_Init(pDevice);
 		Data::InitImGui = true;
 
-		RECT rect;
-		int font_size = 12;
-
-		if (GetClientRect(Data::hWindow, &rect)) {
-			int width = rect.right - rect.left;
-			int height = rect.bottom - rect.top;
-
-			switch (width) {
-			case 1176:
-				font_size = 6;
-				break;
-			case 1280:
-			case 1360:
-			case 1366:
-				font_size = 7;
-				break;
-			case 1600:
-				font_size = 9;
-				break;
-			case 1768:
-				font_size = 10;
-				break;
-			case 1920:
-				font_size = 12;
-				break;
-			case 2560:
-				font_size = 18;
-				break;
-			case 3840:
-				font_size = 30;
-				break;
-			}
-
-			g_window_size = ImVec2(width * 0.1, height * 0.1);
-			g_window_pos = ImVec2(width - g_window_size.x - 10, height - g_window_size.y - 10);
-		}
+		int font_size = ResizeImGui();
+	
 
 		g_font = io.Fonts->AddFontFromMemoryCompressedTTF((const void*)DejaVuSansMono_compressed_data,
 			DejaVuSansMono_compressed_size, font_size);
@@ -64,6 +71,8 @@ HRESULT __stdcall Base::Hooks::EndScene(LPDIRECT3DDEVICE9 pDevice)
 	if (!Data::InitImGui) {
 		return Data::oEndScene(pDevice);
 	}
+
+	ResizeImGui();
 
 	ImGui_ImplDX9_NewFrame();
 	ImGui_ImplWin32_NewFrame();

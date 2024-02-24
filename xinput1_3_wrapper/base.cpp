@@ -17,6 +17,7 @@ bool              Base::Data::Detached   = false;
 bool              Base::Data::ToDetach   = false;
 bool              Base::Data::ShowOverlay = true;
 bool              Base::Data::InitImGui  = false;
+bool Base::Data::Inited = false;
 int Base::Data::takeImage = 0;
 
 std::vector<std::string> Base::Data::lines;
