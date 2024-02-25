@@ -1,6 +1,7 @@
 #include "functional_camera.h"
 #include <strsafe.h>
 #include "infra.h"
+#include "base.h"
 #include <fstream>
 
 using infra::Engine;
@@ -40,6 +41,10 @@ static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* 
 	IDirect3DTexture9* pRenderTexture = nullptr;
 	IDirect3DSurface9* pRenderSurface = nullptr;
 	IDirect3DSurface9* pSrcSurface = nullptr;
+	RECT rect;
+	int screenWidth;
+	int screenHeight;
+	float aspectRatio;
 
 #define CHECK_D3D_RESULT(func, msg) \
 	if ((func) != D3D_OK) { \
@@ -48,31 +53,37 @@ static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* 
 		goto release; \
 	}
 
+	if (!GetClientRect(Base::Data::hWindow, &rect)) {
+		g_LogWriter << "StretchAndSaveCameraImage(): GetClientRect() failed" << std::endl;
+		goto release;
+	}
+
+	aspectRatio = static_cast<float>(rect.bottom - rect.top) / static_cast<float>(rect.right - rect.left);
+
 	CHECK_D3D_RESULT(
-		tex->GetSurfaceLevel(0, &pSrcSurface), "Failed to get src texture surface level 0"
+		tex->GetSurfaceLevel(0, &pSrcSurface), "StretchAndSaveCameraImage(): Failed to get src texture surface level 0"
+	)
+
+	// The texture's always 1024px wide in memory as far as I can tell, so stretch the height to match as needed.
+	CHECK_D3D_RESULT(
+		dev->CreateTexture(1024, static_cast<UINT>(1024 * aspectRatio), 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &pRenderTexture, nullptr),
+		"StretchAndSaveCameraImage(): Failed to CreateTexture()"
 	)
 
 	CHECK_D3D_RESULT(
-		// TODO: This needs to actually match the window aspect ratio.
-		dev->CreateTexture(1024, 576, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &pRenderTexture, nullptr),
-		"Failed to CreateTexture()"
-	)
-
-
-	CHECK_D3D_RESULT(
-		pRenderTexture->GetSurfaceLevel(0, &pRenderSurface), "Failed to GetSurfaceLevel(0)"
+		pRenderTexture->GetSurfaceLevel(0, &pRenderSurface), "StretchAndSaveCameraImage(): Failed to get dst texture surface level 0"
 	)
 
 	CHECK_D3D_RESULT(
-		dev->StretchRect(pSrcSurface, NULL, pRenderSurface, NULL, D3DTEXF_NONE), "StretchRect() failed"
+		dev->StretchRect(pSrcSurface, NULL, pRenderSurface, NULL, D3DTEXF_NONE), "StretchAndSaveCameraImage(): StretchRect() failed"
 	)
 
 	CHECK_D3D_RESULT(
 		D3DXSaveTextureToFile(GetNextImagePath(), D3DXIFF_JPG, pRenderTexture, NULL),
-		"D3DXSaveTextureToFile() failed"
+		"StretchAndSaveCameraImage(): D3DXSaveTextureToFile() failed"
 	)
 
-	g_LogWriter << "Saved image!" << std::endl;
+	g_LogWriter << "StretchAndSaveCameraImage(): Successfully saved image!" << std::endl;
 
 release:
 	if (pRenderSurface != nullptr) pRenderSurface->Release();

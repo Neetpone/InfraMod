@@ -44,9 +44,10 @@ HRESULT (__stdcall *EndScene_orig)(LPDIRECT3DDEVICE9 pDevice);
 
 // Handles to functions in the engine
 static GetPlayerByIndex_t GetPlayerByIndex;
-static KeyValues__GetInt_t KeyValues__GetInt;
 
 // Various state variables
+static bool g_SuccessCountersEnabled = true;
+static bool g_FunctionalCameraEnabled = true;
 static infra::InfraEngine* g_Engine;
 
 #define PTR_ADD(P, A) ((void *)(((uint32_t) (P)) + (A)))
@@ -56,7 +57,7 @@ static void* GetModuleAddress(const char* name) {
 	void* addr;
 
 	while (true) {
-		addr = (void*)GetModuleHandleA(name);
+		addr = static_cast<void*>(GetModuleHandleA(name));
 		if (addr) {
 			break;
 		}
@@ -66,7 +67,6 @@ static void* GetModuleAddress(const char* name) {
 
 	return addr;
 }
-
 
 namespace infra {
 	InfraEngine::InfraEngine() {
@@ -82,6 +82,8 @@ namespace infra {
 		this->pGlobalEntityAddToCounter = reinterpret_cast<GlobalEntity_AddToCounter_t>(this->get_server_ptr(0x158450));
 		this->pGlobalEntityGetState = reinterpret_cast<GlobalEntity_GetState_t>(this->get_server_ptr(0x158590));
 		this->pGlobalEntitySetState = reinterpret_cast<GlobalEntity_SetState_t>(this->get_server_ptr(0x1583F0));
+
+		this->pKeyValuesGetInt = reinterpret_cast<KeyValues__GetInt_t>(this->get_client_ptr(0x3A0840));
 	}
 
 	InfraEngine::~InfraEngine() {
@@ -90,7 +92,6 @@ namespace infra {
 			MH_RemoveHook(hook);
 		}
 	}
-
 
 	// TODO: Maybe make the hooker print out an error message if the hook fails.
 #define HOOKER(BASE) \
@@ -104,7 +105,7 @@ namespace infra {
 		} \
 	}
 #define GETTER(BASE) \
-	void* InfraEngine::get_##BASE##_ptr(const int32_t offset) { \
+	void* InfraEngine::get_##BASE##_ptr(const int32_t offset) const { \
 		return PTR_ADD(this->BASE##_base, offset); \
 	}
 
@@ -142,37 +143,40 @@ namespace infra {
 		return *(static_cast<char**>(PTR_ADD(ptr, 0x3C)));
 	}
 
-	int InfraEngine::GlobalEntity_AddEntity(const char* pGlobalname, const char* pMapName, functions::GLOBALESTATE state) const {
+	int InfraEngine::GlobalEntity_AddEntity(const char* pGlobalname, const char* pMapName, const functions::GLOBALESTATE state) const {
 		return this->pGlobalEntityAddEntity(pGlobalname, pMapName, state);
 	}
 
-	void InfraEngine::GlobalEntity_SetCounter(int globalIndex, int counter) const {
+	void InfraEngine::GlobalEntity_SetCounter(const int globalIndex, const int counter) const {
 		this->pGlobalEntitySetCounter(globalIndex, counter);
 	}
 
-	int InfraEngine::GlobalEntity_GetCounter(int globalIndex) const {
+	int InfraEngine::GlobalEntity_GetCounter(const int globalIndex) const {
 		return this->pGlobalEntityGetCounter(globalIndex);
 	}
 
-	int InfraEngine::GlobalEntity_AddToCounter(int globalIndex, int count) const {
+	int InfraEngine::GlobalEntity_AddToCounter(const int globalIndex, const int count) const {
 		return this->pGlobalEntityAddToCounter(globalIndex, count);
 	}
 
-	int InfraEngine::GlobalEntity_GetState(int globalIndex) const {
+	int InfraEngine::GlobalEntity_GetState(const int globalIndex) const {
 		return this->pGlobalEntityGetState(globalIndex);
 	}
 
-	void InfraEngine::GlobalEntity_SetState(int globalIndex, functions::GLOBALESTATE state) const {
+	void InfraEngine::GlobalEntity_SetState(const int globalIndex, const functions::GLOBALESTATE state) const {
 		return this->pGlobalEntitySetState(globalIndex, state);
 	}
 
-	CMatSystemTexture* InfraEngine::MaterialSystem_GetTextureById(int id) {
+	CMatSystemTexture* InfraEngine::MaterialSystem_GetTextureById(const int id) const {
 		void* textureDictionary = this->get_vguimatsurface_ptr(0x1432D0);
 		void* textureList = *((void**)PTR_ADD(textureDictionary, 4));
 
 		return static_cast<CMatSystemTexture*>(PTR_ADD(textureList, id << 6));
 	}
 
+	int InfraEngine::KeyValues__GetInt(void* lpKeyValues, const char* name, const int defaultValue) const {
+		return this->pKeyValuesGetInt(lpKeyValues, name, defaultValue);
+	}
 
 	InfraEngine* Engine() {
 		return g_Engine;
@@ -180,10 +184,24 @@ namespace infra {
 }
 
 
-static void hook_game_functions() {
-	g_LogWriter.open("LOG.TXT", std::ios_base::out);
+static void load_config() {
+	CSimpleIniA config;
 
+	if (config.LoadFile("floorb_infra_mod.ini") == SI_OK) {
+		g_SuccessCountersEnabled = config.GetBoolValue("features", "success_counters", true);
+		g_FunctionalCameraEnabled = config.GetBoolValue("features", "functional_camera", true);
+	} else {
+		config.SetBoolValue("features", "success_counters", true);
+		config.SetBoolValue("features", "functional_camera", true);
+		config.SaveFile("floorb_infra_mod.ini");
+	}
+}
+
+static void hook_game_functions() {
+	g_LogWriter.open("floorb_infra_mod.log", std::ios_base::out);
 	g_LogWriter << "LOG BEGIN" << std::endl;
+
+	load_config();
 
 	// Set this up here so that hopefully our structures are all ready.
 	g_Engine = new infra::InfraEngine();
@@ -193,19 +211,22 @@ static void hook_game_functions() {
 	g_Engine->hook_client(0x1CCA30, &CInfraCameraFreezeFrame__OnCommand, &CInfraCameraFreezeFrame__OnCommand_orig);
 
 	GetPlayerByIndex = reinterpret_cast<GetPlayerByIndex_t>(g_Engine->get_client_ptr(0x51DD0));
-	KeyValues__GetInt = reinterpret_cast<KeyValues__GetInt_t>(g_Engine->get_client_ptr(0x3A0840));
 }
 
 void __fastcall InitMapStats(void* this_ptr) {
 	InitMapStats_orig(this_ptr);
 
-	mod::counters::InitMapStats();
+	if (g_SuccessCountersEnabled) {
+		mod::counters::InitMapStats();
+	}
 }
 
-int __fastcall StatSuccess(void* this_ptr, int, int event_type, int count, bool is_new) {
-	int r = StatSuccess_orig(this_ptr, event_type, count, is_new);
+int __fastcall StatSuccess(void* this_ptr, int, const int event_type, const int count, const bool is_new) {
+	const int r = StatSuccess_orig(this_ptr, event_type, count, is_new);
 
-	mod::counters::StatSuccess(event_type, count, is_new);
+	if (g_SuccessCountersEnabled) {
+		mod::counters::StatSuccess(event_type, count, is_new);
+	}
 	return r;
 }
 
@@ -217,27 +238,33 @@ int __fastcall CInfraCameraFreezeFrame__OnCommand(CInfraCameraFreezeFrame* thiz,
 	ret = CInfraCameraFreezeFrame__OnCommand_orig(thiz, lpKeyValues);
 
 	// It's not a DoFlash command, don't care!
-	if (KeyValues__GetInt(lpKeyValues, "DoFlash", 0) != 1) {
+	if (g_Engine->KeyValues__GetInt(lpKeyValues, "DoFlash", 0) != 1) {
 		return ret;
 	}
 
-	mod::functional_camera::OnTakePicture(thiz);
+	if (g_FunctionalCameraEnabled) {
+		mod::functional_camera::OnTakePicture(thiz);
+	}
 
 	return ret;
 }
 
 HRESULT __stdcall EndScene(const LPDIRECT3DDEVICE9 pDevice) {
-	mod::functional_camera::EndScene(pDevice);
+	if (g_FunctionalCameraEnabled) {
+		mod::functional_camera::EndScene(pDevice);
+	}
 
-	if (overlay::shown && !g_Engine->is_in_main_menu() && !g_Engine->loading_screen_visible()) {
+	if (g_SuccessCountersEnabled && overlay::shown && !g_Engine->is_in_main_menu() && !g_Engine->loading_screen_visible()) {
 		overlay::Render(Base::Data::hWindow, pDevice);
 	}
 
 	return EndScene_orig(pDevice);
 }
 
-LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-	overlay::WndProc(hWnd, uMsg, wParam, lParam);
+LRESULT CALLBACK WndProc(const HWND hWnd, const UINT uMsg, const WPARAM wParam, const LPARAM lParam) {
+	if (g_SuccessCountersEnabled) {
+		overlay::WndProc(hWnd, uMsg, wParam, lParam);
+	}
 
 	return CallWindowProc(Base::Data::oWndProc, hWnd, uMsg, wParam, lParam);
 }

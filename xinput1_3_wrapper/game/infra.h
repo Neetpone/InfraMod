@@ -2,7 +2,7 @@
 #include "stdafx.h"
 
 #define _HOOKER_PROTOTYPE(BASE) template <typename T> void hook_##BASE(const int32_t offset, LPVOID pDetour, T **pOriginal);
-#define _GETTER_PROTOTYPE(BASE) void* get_##BASE##_ptr(const int32_t offset);
+#define _GETTER_PROTOTYPE(BASE) void* get_##BASE##_ptr(const int32_t offset) const;
 
 namespace infra {
 	// Various structures reverse-engineered from Infra / its version of the Source engine.
@@ -192,7 +192,10 @@ namespace infra {
 		void GlobalEntity_SetState(int globalIndex, functions::GLOBALESTATE state) const;
 
 		// MaterialSystem functions
-		structs::CMatSystemTexture* MaterialSystem_GetTextureById(int id);
+		structs::CMatSystemTexture* MaterialSystem_GetTextureById(int id) const;
+
+		// Other stuff
+		int KeyValues__GetInt(void* lpKeyValues, const char* name, int defaultValue) const;
 	private:
 		std::vector<void*> enabledHooks;
 		void* engine_base;
@@ -207,6 +210,8 @@ namespace infra {
 		functions::GlobalEntity_AddToCounter_t pGlobalEntityAddToCounter;
 		functions::GlobalEntity_GetState_t pGlobalEntityGetState;
 		functions::GlobalEntity_SetState_t pGlobalEntitySetState;
+
+		functions::KeyValues__GetInt_t pKeyValuesGetInt;
 	};
 
 	InfraEngine* Engine();
