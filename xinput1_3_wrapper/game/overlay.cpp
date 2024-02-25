@@ -59,6 +59,20 @@ overlay::OverlayLine_t overlay::title = overlay::OverlayLine_t();
 std::vector<overlay::OverlayLine_t> overlay::lines = std::vector<overlay::OverlayLine_t>();
 bool overlay::imGuiInitialized = false;
 
+extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+void overlay::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+
+	if (uMsg == WM_KEYDOWN ){
+		switch (wParam) {
+		case Base::Data::Keys::ToggleMenu:
+			overlay::shown = !overlay::shown;
+			break;
+		}
+	}
+
+	ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam);
+}
+
 void overlay::Render(HWND hWnd, LPDIRECT3DDEVICE9 pDevice) {
 	long long now;
 

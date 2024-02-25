@@ -165,6 +165,7 @@
   <ItemGroup>
     <ClInclude Include="base.h" />
     <ClInclude Include="game\counters.h" />
+    <ClInclude Include="game\functional_camera.h" />
     <ClInclude Include="game\infra.h" />
     <ClInclude Include="game\overlay.h" />
     <ClInclude Include="include\font.hpp" />
@@ -196,9 +197,9 @@
   <ItemGroup>
     <ClCompile Include="base.cpp" />
     <ClCompile Include="game\counters.cpp" />
+    <ClCompile Include="game\functional_camera.cpp" />
     <ClCompile Include="game\overlay.cpp" />
     <ClCompile Include="game\infra.cpp" />
-    <ClCompile Include="game\hotkeys.cpp" />
     <ClCompile Include="include\imgui\imgui.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
     </ClCompile>

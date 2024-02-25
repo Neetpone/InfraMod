@@ -167,6 +167,7 @@ namespace infra {
 	class InfraEngine {
 	public:
 		InfraEngine();
+		~InfraEngine();
 
 		_HOOKER_PROTOTYPE(client)
 		_HOOKER_PROTOTYPE(server)
@@ -182,13 +183,18 @@ namespace infra {
 		bool loading_screen_visible();
 		const char* get_map_name();
 
+		// GlobalEntity functions
 		int GlobalEntity_AddEntity(const char* pGlobalname, const char* pMapName, functions::GLOBALESTATE state) const;
 		void GlobalEntity_SetCounter(int globalIndex, int counter) const;
 		int GlobalEntity_GetCounter(int globalIndex) const;
 		int GlobalEntity_AddToCounter(int globalIndex, int count) const;
 		int GlobalEntity_GetState(int globalIndex) const;
 		void GlobalEntity_SetState(int globalIndex, functions::GLOBALESTATE state) const;
+
+		// MaterialSystem functions
+		structs::CMatSystemTexture* MaterialSystem_GetTextureById(int id);
 	private:
+		std::vector<void*> enabledHooks;
 		void* engine_base;
 		void* server_base;
 		void* client_base;

@@ -39,6 +39,7 @@ bool mod::load(sdk::create_interface_fn interface_factory, sdk::create_interface
 
 void mod::unload() {
 	// Probably want to do Base::Data::Detached = true;
+	Base::Hooks::Shutdown();
 }
 
 void mod::pause() {}

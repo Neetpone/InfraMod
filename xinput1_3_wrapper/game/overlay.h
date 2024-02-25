@@ -25,5 +25,6 @@ namespace overlay {
 	extern std::vector<OverlayLine_t> lines;
 	extern bool imGuiInitialized;
 
+	void WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 	void Render(HWND hWnd, LPDIRECT3DDEVICE9 pDevice);
 }

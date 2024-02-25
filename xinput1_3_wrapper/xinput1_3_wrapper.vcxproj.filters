@@ -30,6 +30,7 @@
     <ClInclude Include="include\SimpleIni.h" />
     <ClInclude Include="game\counters.h" />
     <ClInclude Include="game\infra.h" />
+    <ClInclude Include="game\functional_camera.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp" />
@@ -41,7 +42,6 @@
     <ClCompile Include="include\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="include\imgui\imgui_tables.cpp" />
     <ClCompile Include="include\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="game\hotkeys.cpp" />
     <ClCompile Include="game\infra.cpp" />
     <ClCompile Include="game\overlay.cpp" />
     <ClCompile Include="Utils.cpp" />
@@ -54,6 +54,7 @@
     <ClCompile Include="include\minhook\hde\hde32.c" />
     <ClCompile Include="include\minhook\hde\hde64.c" />
     <ClCompile Include="game\counters.cpp" />
+    <ClCompile Include="game\functional_camera.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="floorb_infra_mod.def" />
