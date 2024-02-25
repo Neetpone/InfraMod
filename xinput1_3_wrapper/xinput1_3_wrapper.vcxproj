@@ -164,8 +164,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="base.h" />
+    <ClInclude Include="game\counters.h" />
+    <ClInclude Include="game\infra.h" />
     <ClInclude Include="game\overlay.h" />
-    <ClInclude Include="game\structs.h" />
     <ClInclude Include="include\font.hpp" />
     <ClInclude Include="include\imgui\imconfig.h" />
     <ClInclude Include="include\imgui\imgui.h" />
@@ -184,6 +185,7 @@
     <ClInclude Include="include\minhook\hde\table32.h" />
     <ClInclude Include="include\minhook\hde\table64.h" />
     <ClInclude Include="include\minhook\trampoline.h" />
+    <ClInclude Include="include\SimpleIni.h" />
     <ClInclude Include="mod.h" />
     <ClInclude Include="plugin.h" />
     <ClInclude Include="stdafx.h" />
@@ -193,6 +195,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="base.cpp" />
+    <ClCompile Include="game\counters.cpp" />
     <ClCompile Include="game\overlay.cpp" />
     <ClCompile Include="game\infra.cpp" />
     <ClCompile Include="game\hotkeys.cpp" />

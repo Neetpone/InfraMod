@@ -1,22 +1,15 @@
 #include "stdafx.h"
 #include <base.h>
-#include <metadata.h>
 #include <strsafe.h>
 #include <fstream>
-#include "structs.h"
 #include "overlay.h"
+#include "SimpleIni.h"
+#include "infra.h"
+
+#include "counters.h"
 
 using namespace infra::structs;
 using namespace infra::functions;
-
-namespace infra {
-	void* server_base;
-	void* engine_base;
-	void* client_base;
-
-	void* vguimatsurface_base;
-	void* materialsystem_base;
-};
 
 static std::ofstream g_LogWriter = std::ofstream();
 
@@ -39,7 +32,7 @@ int __fastcall StatSuccess(void* this_ptr, int, int event_type, int count, bool 
 // This gets called when we take a picture.
 typedef int(__thiscall* CInfraCameraFreezeFrame__OnCommand_t)(void* thiz, void* lpKeyValues);
 CInfraCameraFreezeFrame__OnCommand_t CInfraCameraFreezeFrame__OnCommand_orig;
-int __fastcall CInfraCameraFreezeFrame__OnCommand(void* thiz, int, void* lpKeyValues);
+int __fastcall CInfraCameraFreezeFrame__OnCommand(CInfraCameraFreezeFrame* thiz, int, void* lpKeyValues);
 
 
 // DirectX EndScene()
@@ -50,12 +43,6 @@ HRESULT (__stdcall *EndScene_orig)(LPDIRECT3DDEVICE9 pDevice);
 /* Hooked functions end */
 
 // Handles to functions in the engine
-static GlobalEntity_AddEntity_t GlobalEntity_AddEntity;
-static GlobalEntity_SetCounter_t GlobalEntity_SetCounter;
-static GlobalEntity_GetCounter_t GlobalEntity_GetCounter;
-static GlobalEntity_AddToCounter_t GlobalEntity_AddToCounter;
-static GlobalEntity_GetState_t GlobalEntity_GetState;
-static GlobalEntity_SetState_t GlobalEntity_SetState;
 static GetPlayerByIndex_t GetPlayerByIndex;
 static KeyValues__GetInt_t KeyValues__GetInt;
 static void* g_TextureDictionary;
@@ -64,11 +51,13 @@ static IDirect3DDevice9* g_Dev;
 static CInfraCameraFreezeFrame* g_FreezeFrame;
 static unsigned int g_ShouldSaveImage; // Set to 1 by our other thread when it's time to save the image, then the Direct3D thread does the actual saving.
 
-nlohmann::json current_mapdata;
+
+#define PTR_ADD(P, A) ((void *)(((uint32_t) (P)) + (A)))
+
 
 static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* tex);
 
-void* GetModuleAddress(const char* name) {
+static void* GetModuleAddress(const char* name) {
 	void* addr;
 
 	while (true) {
@@ -83,314 +72,134 @@ void* GetModuleAddress(const char* name) {
 	return addr;
 }
 
-void Base::Hooks::hook_game_functions() {
+static infra::InfraEngine* g_Engine;
 
+namespace infra {
+	InfraEngine::InfraEngine() {
+		this->engine_base = GetModuleAddress("engine.dll");
+		this->client_base = GetModuleAddress("client.dll");
+		this->server_base = GetModuleAddress("server.dll");
+		this->materialsystem_base = GetModuleAddress("MaterialSystem.dll");
+		this->vguimatsurface_base = GetModuleAddress("vguimatsurface.dll");
+
+		this->pGlobalEntityAddEntity = reinterpret_cast<GlobalEntity_AddEntity_t>(this->get_server_ptr(0x158A10));
+		this->pGlobalEntitySetCounter = reinterpret_cast<GlobalEntity_SetCounter_t>(this->get_server_ptr(0x158420));
+		this->pGlobalEntityGetCounter = reinterpret_cast<GlobalEntity_GetCounter_t>(this->get_server_ptr(0x1585C0));
+		this->pGlobalEntityAddToCounter = reinterpret_cast<GlobalEntity_AddToCounter_t>(this->get_server_ptr(0x158450));
+		this->pGlobalEntityGetState = reinterpret_cast<GlobalEntity_GetState_t>(this->get_server_ptr(0x158590));
+		this->pGlobalEntitySetState = reinterpret_cast<GlobalEntity_SetState_t>(this->get_server_ptr(0x1583F0));
+	}
+
+	// TODO: Maybe make the hooker print out an error message if the hook fails.
+#define HOOKER(BASE) \
+	template <typename T> \
+	void InfraEngine::hook_##BASE(const int32_t offset, LPVOID pDetour, T** pOriginal) { \
+		void* pTarget = PTR_ADD(this->BASE##_base, offset); \
+		if (MH_CreateHook(pTarget, pDetour, reinterpret_cast<void **>(pOriginal)) == MH_OK) { \
+			MH_EnableHook(pTarget); \
+		} \
+	}
+#define GETTER(BASE) \
+	void* InfraEngine::get_##BASE##_ptr(const int32_t offset) { \
+		return PTR_ADD(this->BASE##_base, offset); \
+	}
+
+	HOOKER(client)
+	HOOKER(server)
+
+	GETTER(client)
+	GETTER(server)
+	GETTER(engine)
+	GETTER(vguimatsurface)
+	GETTER(materialsystem)
+
+#undef HOOKER
+#undef GETTER
+
+	bool InfraEngine::is_in_main_menu() {
+		return this->engine_base
+			&& *(static_cast<bool*>(PTR_ADD(this->engine_base, 0x63FD86)));
+	}
+
+	bool InfraEngine::loading_screen_visible() {
+		return this->engine_base
+			&& *(static_cast<bool*>(PTR_ADD(this->engine_base, 0x5F9269)));
+	}
+
+	const char* InfraEngine::get_map_name() {
+		if (!this->server_base) {
+			return nullptr;
+		}
+
+		// 		uint32_t ptr = *(uint32_t*)((uint32_t)this->server_base + 0x78BD00) + 0x3c;
+
+		void* ptr = *(static_cast<void**>(PTR_ADD(this->server_base, 0x78BD00)));
+
+		return *(static_cast<char**>(PTR_ADD(ptr, 0x3C)));
+	}
+
+	int InfraEngine::GlobalEntity_AddEntity(const char* pGlobalname, const char* pMapName, functions::GLOBALESTATE state) const {
+		return this->pGlobalEntityAddEntity(pGlobalname, pMapName, state);
+	}
+
+	void InfraEngine::GlobalEntity_SetCounter(int globalIndex, int counter) const {
+		this->pGlobalEntitySetCounter(globalIndex, counter);
+	}
+
+	int InfraEngine::GlobalEntity_GetCounter(int globalIndex) const {
+		return this->pGlobalEntityGetCounter(globalIndex);
+	}
+
+	int InfraEngine::GlobalEntity_AddToCounter(int globalIndex, int count) const {
+		return this->pGlobalEntityAddToCounter(globalIndex, count);
+	}
+
+	int InfraEngine::GlobalEntity_GetState(int globalIndex) const {
+		return this->pGlobalEntityGetState(globalIndex);
+	}
+
+	void InfraEngine::GlobalEntity_SetState(int globalIndex, functions::GLOBALESTATE state) const {
+		return this->pGlobalEntitySetState(globalIndex, state);
+	}
+
+	InfraEngine* Engine() {
+		return g_Engine;
+	}
+}
+
+
+
+void Base::Hooks::hook_game_functions() {
 	g_LogWriter.open("LOG.TXT", std::ios_base::out);
 
 	g_LogWriter << "LOG BEGIN" << std::endl;
 
-	infra::server_base = GetModuleAddress("server.dll");
-	infra::engine_base = GetModuleAddress("engine.dll");
-	infra::client_base = GetModuleAddress("client.dll");
-	infra::vguimatsurface_base = GetModuleAddress("vguimatsurface.dll");
-	infra::materialsystem_base = GetModuleAddress("MaterialSystem.dll");
+	// Set this up here so that hopefully our structures are all ready.
+	g_Engine = new infra::InfraEngine();
 
-	g_LogWriter << "vguimatsurface.dll is at " << std::hex << infra::vguimatsurface_base << std::dec << std::endl;
+	g_Engine->hook_server(0x297100, &InitMapStats, &InitMapStats_orig);
+	g_Engine->hook_server(0x2974E0, &StatSuccess, &StatSuccess_orig);
+	g_Engine->hook_client(0x1CCA30, &CInfraCameraFreezeFrame__OnCommand, &CInfraCameraFreezeFrame__OnCommand_orig);
 
-#define FHOOK(fname, libname, offset) \
-	auto fname##_ptr = (void*)((uint32_t)infra::libname##_base + offset); \
-	if (MH_CreateHook(fname##_ptr, &fname, reinterpret_cast<LPVOID *>(&fname##_orig)) != MH_OK) { \
-		MessageBoxA(NULL, "Failed to make hook!", "Error!", MB_OK); \
-		return; \
-	} \
-	if (MH_EnableHook(fname##_ptr) != MH_OK) { \
-		MessageBoxA(NULL, "Failed to enable hook!", "Error!", MB_OK); \
-	}
+	GetPlayerByIndex = reinterpret_cast<GetPlayerByIndex_t>(g_Engine->get_client_ptr(0x51DD0));
+	KeyValues__GetInt = reinterpret_cast<KeyValues__GetInt_t>(g_Engine->get_client_ptr(0x3A0840));
 
-	FHOOK(InitMapStats, server, 0x297100);
-	FHOOK(StatSuccess, server, 0x2974E0);
-	//FHOOK(CInfraCameraFreezeFrame__new, client, 0x1CCB60);
-	FHOOK(CInfraCameraFreezeFrame__OnCommand, client, 0x1CCA30);
-
-	GlobalEntity_AddEntity = (GlobalEntity_AddEntity_t)((uint32_t)infra::server_base + 0x158A10);
-	GlobalEntity_SetCounter = (GlobalEntity_SetCounter_t)((uint32_t)infra::server_base + 0x158420);
-	GlobalEntity_GetCounter = (GlobalEntity_GetCounter_t)((uint32_t)infra::server_base + 0x1585C0);
-	GlobalEntity_AddToCounter = (GlobalEntity_AddToCounter_t)((uint32_t)infra::server_base + 0x158450);
-	GlobalEntity_GetState = (GlobalEntity_GetState_t)((uint32_t)infra::server_base + 0x158590);
-	GlobalEntity_SetState = (GlobalEntity_SetState_t)((uint32_t)infra::server_base + 0x1583F0);
-	GetPlayerByIndex = (GetPlayerByIndex_t)((uint32_t)infra::client_base + 0x51DD0);
-	KeyValues__GetInt = (KeyValues__GetInt_t)((uint32_t)infra::client_base + 0x3A0840);
-	g_TextureDictionary = (void*)((uint32_t)infra::vguimatsurface_base + 0x1432D0);
-	g_pShaderApi = (void*)((uint32_t)infra::materialsystem_base + 0x1194A8);
-
-
-	try {
-		std::ifstream f("mapdata.txt");
-		auto data = nlohmann::json::parse(f);
-		g_mapdata = data;
-	}
-	catch (std::exception e) {
-
-	}
+	g_TextureDictionary = reinterpret_cast<void*>(g_Engine->get_vguimatsurface_ptr(0x1432D0));
+	g_pShaderApi = reinterpret_cast<void*>(g_Engine->get_materialsystem_ptr(0x1194A8));
 }
 
-bool Base::Hooks::is_in_main_menu() {
-	return (infra::engine_base) ?
-		*(bool*)((uint32_t)infra::engine_base + 0x63FD86) : true;
-}
 
-bool Base::Hooks::loading_screen_visible() {
-	return (infra::engine_base) ?
-		*(bool*)((uint32_t)infra::engine_base + 0x5F9269) : true;
-}
 
-const char* get_map_name() {
-	if (!infra::server_base) {
-		return NULL;
-	}
-
-	uint32_t ptr = *(uint32_t*)((uint32_t)infra::server_base + 0x78BD00) + 0x3c;
-	return *(char**)ptr;
-}
-
-const char* GetMapStatName(int event_type) {
-	const char* result = NULL;
-
-	switch (event_type)
-	{
-	case 0:
-		result = "successful_photos";
-		break;
-	case 1:
-		result = "corruption_uncovered";
-		break;
-	case 2:
-		result = "spots_repaired";
-		break;
-	case 3:
-		result = "mistakes_made";
-		break;
-	case 4:
-		result = "geocaches_found";
-		break;
-	case 5:
-		result = "water_flow_meters_repaired";
-		break;
-	default:
-		break;
-	}
-	return result;
-}
-
-std::string get_counter_name(const char* map_name, const char* stat_name) {
-	return std::string(map_name) + "_counter_" + std::string(stat_name);
-}
-
-std::string format_stat(int value, int max_value) {
-	return std::to_string(value) + " / " + std::to_string(max_value);
-}
-
-int get_max_value(int event_type, const char* map_name) {
-	const char* v = "";
-
-	switch (event_type)
-	{
-	case 0:
-		v = "camera_targets";
-		break;
-	case 1:
-		v = "corruption_targets";
-		break;
-	case 2:
-		v = "repair_targets";
-		break;
-	case 3:
-		v = "mistake_targets";
-		break;
-	case 4:
-		v = "geocaches";
-		break;
-	case 5:
-		v = "water_flow_meter_targets";
-		break;
-	default:
-		break;
-	}
-
-	std::string s = map_name;
-	transform(s.begin(), s.end(), s.begin(), ::tolower);
-	return current_mapdata[s][v];
-}
-
-void update_gui_table(int event_type, const char* map_name, int value) {
-	int max_value = 0;
-
-	try {
-		max_value = get_max_value(event_type, map_name);
-	}
-	catch (std::exception e) {
-	}
-
-	ImVec4 color = (value == max_value) ? g_font_color_max : g_font_color;
-
-	switch (event_type) {
-	case 0:
-		overlay::lines[0] = overlay::OverlayLine_t(
-			"Defects:     ",
-			format_stat(value, max_value),
-			color,
-			color
-		);
-		break;
-	case 1:
-		overlay::lines[1] = overlay::OverlayLine_t(
-			"Corruption:  ",
-			format_stat(value, max_value),
-			color,
-			color
-		);
-		break;
-	case 2:
-		overlay::lines[2] = overlay::OverlayLine_t(
-			"Repairs:     ",
-			format_stat(value, max_value),
-			color,
-			color
-		);
-		break;
-	case 3:
-		// "mistakes_made";
-		break;
-	case 4:
-		overlay::lines[3] = overlay::OverlayLine_t(
-			"Geocaches:   ",
-			format_stat(value, max_value),
-			color,
-			color
-		);
-		break;
-	case 5:
-		overlay::lines[4] = overlay::OverlayLine_t(
-			"Flow meters: ",
-			format_stat(value, max_value),
-			color,
-			color
-		);
-		break;
-	default:
-		break;
-	}
-}
-
-void init_counter(const char* map_name, int event_type) {
-	auto name = get_counter_name(map_name, GetMapStatName(event_type));
-	int index = GlobalEntity_AddEntity(name.c_str(), map_name, GLOBAL_OFF);
-	int value = 0;
-
-	if (GlobalEntity_GetState(index) == GLOBAL_OFF) {
-		GlobalEntity_SetCounter(index, 0);
-		GlobalEntity_SetState(index, GLOBAL_ON);
-	}
-	else {
-		value = GlobalEntity_GetCounter(index);
-	}
-
-	update_gui_table(event_type, map_name, value);
-}
-
-void exclude_inactive_photo_spot(std::string map_name, std::string spot_name, nlohmann::json& mapdata) {
-	int index = GlobalEntity_AddEntity(spot_name.c_str(), map_name.c_str(), GLOBAL_OFF);
-
-	if (GlobalEntity_GetState(index) == GLOBAL_ON) {
-		int num = mapdata[map_name]["camera_targets"];
-
-		if (num > 0) {
-			--num;
-		}
-
-		mapdata[map_name]["camera_targets"] = num;
-	}
-}
-
-auto exclude_inactive_photo_spots(std::string map_name, nlohmann::json mapdata) {
-	if (map_name == "infra_c2_m2_reserve2") {
-		exclude_inactive_photo_spot(map_name, "infra_reserve1_dam_picture_taken", mapdata);
-	}
-	else if (map_name == "infra_c3_m2_tunnel2") {
-		exclude_inactive_photo_spot(map_name, "infra_tunnel_elevator_picture_taken", mapdata);
-		exclude_inactive_photo_spot(map_name, "infra_tunnel_cracks_picture_taken", mapdata);
-	}
-	else if (map_name == "infra_c5_m1_watertreatment") {
-		exclude_inactive_photo_spot(map_name, "infra_watertreatment_steam_picture_taken", mapdata);
-	}
-
-	return mapdata;
-}
-
-/*
-	This called once before a map is loaded
-*/
 void __fastcall InitMapStats(void* this_ptr) {
 	InitMapStats_orig(this_ptr);
 
-	if (Base::Hooks::is_in_main_menu()) {
-		return;
-	}
-
-	overlay::lines.resize(5);
-
-	for (int i = 1; i < 6; ++i) {
-		overlay::lines[i].nameColor = g_font_color;
-		overlay::lines[i].valueColor = g_font_color;
-		overlay::lines[i].blinksLeft = 0;
-	}
-
-	const char* map_name = get_map_name();
-	std::string& s = overlay::title.value;
-	s.assign(map_name);
-	transform(s.begin(), s.end(), s.begin(), ::tolower);
-
-	current_mapdata = exclude_inactive_photo_spots(s, g_mapdata);
-
-	for (int i = 0; i < 6; ++i) {
-		init_counter(map_name, i);
-	}
+	mod::counters::InitMapStats();
 }
 
 int __fastcall StatSuccess(void* this_ptr, int, int event_type, int count, bool is_new) {
 	int r = StatSuccess_orig(this_ptr, event_type, count, is_new);
 
-	if (!is_new || count == 0) {
-		return r;
-	}
-
-	auto stat_name = GetMapStatName(event_type);
-
-	if (!stat_name) {
-		return r;
-	}
-
-	auto map_name = get_map_name();
-	auto name = get_counter_name(map_name, stat_name);
-
-	int index = GlobalEntity_AddEntity(name.c_str(), map_name, GLOBAL_OFF);
-	int value = GlobalEntity_AddToCounter(index, 1);
-
-	update_gui_table(event_type, map_name, value);
-
-	int line_idx = 0;
-
-	switch (event_type)
-	{
-	case 0: line_idx = 1; break;
-	case 1:	line_idx = 2; break;
-	case 2:	line_idx = 3; break;
-	case 4:	line_idx = 4; break;
-	case 5:	line_idx = 5; break;
-	default: break;
-	}
-
-	overlay::lines[line_idx].blinksLeft = 5;
+	mod::counters::StatSuccess(event_type, count, is_new);
 	return r;
 }
 
@@ -486,7 +295,6 @@ void SimpleDumpMatSystemTexture(const CMatSystemTexture* pTexture) {
 
 }
 
-#define PTR_ADD(P, A) ((void *)(((uint32_t) (P)) + (A)))
 
 CMatSystemTexture* GetTextureById(int id) {
 	void* textureList = *((void**)PTR_ADD(g_TextureDictionary, 4));
@@ -497,9 +305,8 @@ CMatSystemTexture* GetTextureById(int id) {
 }
 
 // Purpose: Determine when the CInfraCameraFreezeFrame receives a command.
-int __fastcall CInfraCameraFreezeFrame__OnCommand(void* thiz, int, void* lpKeyValues) {
+int __fastcall CInfraCameraFreezeFrame__OnCommand(CInfraCameraFreezeFrame* thiz, int, void* lpKeyValues) {
 	int ret;
-	CInfraCameraFreezeFrame* freezeFrame = reinterpret_cast<CInfraCameraFreezeFrame *>(thiz);
 
 	ret = CInfraCameraFreezeFrame__OnCommand_orig(thiz, lpKeyValues);
 
@@ -508,7 +315,7 @@ int __fastcall CInfraCameraFreezeFrame__OnCommand(void* thiz, int, void* lpKeyVa
 		return ret;
 	}
 
-	g_FreezeFrame = freezeFrame;
+	g_FreezeFrame = thiz;
 
 	// OnCommand actually gets run from a different thread than the DirectX thread, so we latch this in
 	// in order to then check from the DirectX thread and do the save.
@@ -536,7 +343,7 @@ static TCHAR* GetNextImagePath() {
 
 	swprintf(
 		buf, MAX_PATH, TEXT("DCIM\\%S_%d-%02d-%02d_%02d%02d%02d.jpg"),
-		get_map_name(), systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond
+		g_Engine->get_map_name(), systemTime.wYear, systemTime.wMonth, systemTime.wDay, systemTime.wHour, systemTime.wMinute, systemTime.wSecond
 	);
 
 	return buf;
@@ -547,37 +354,37 @@ static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* 
 	IDirect3DSurface9* pRenderSurface = nullptr;
 	IDirect3DSurface9* pSrcSurface = nullptr;
 
-#define CHECK_IT(func, msg) \
-	if (func != D3D_OK) { \
-		g_LogWriter << msg << std::endl; \
+#define CHECK_D3D_RESULT(func, msg) \
+	if ((func) != D3D_OK) { \
+		g_LogWriter << (msg) << std::endl; \
 		g_LogWriter.flush(); \
 		goto release; \
 	}
 
-
-	CHECK_IT(
+	CHECK_D3D_RESULT(
 		tex->GetSurfaceLevel(0, &pSrcSurface), "Failed to get src texture surface level 0"
-	);
+	)
 
-	CHECK_IT(
+	CHECK_D3D_RESULT(
 		// TODO: This needs to actually match the window aspect ratio.
 		g_Dev->CreateTexture(1024, 576, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &pRenderTexture, nullptr),
 		"Failed to CreateTexture()"
-	);
+	)
 
 
-	CHECK_IT(
+	CHECK_D3D_RESULT(
 		pRenderTexture->GetSurfaceLevel(0, &pRenderSurface), "Failed to GetSurfaceLevel(0)"
-	);
+	)
 
-	CHECK_IT(
+	CHECK_D3D_RESULT(
 		dev->StretchRect(pSrcSurface, NULL, pRenderSurface, NULL, D3DTEXF_NONE), "StretchRect() failed"
-	);
+	)
 
 
-	D3DXSaveTextureToFile(
-		GetNextImagePath(), D3DXIFF_JPG, pRenderTexture, NULL
-	);
+	CHECK_D3D_RESULT(
+		D3DXSaveTextureToFile(GetNextImagePath(), D3DXIFF_JPG, pRenderTexture, NULL),
+		"D3DXSaveTextureToFile() failed"
+	)
 
 	g_LogWriter << "Saved image!" << std::endl;
 
@@ -589,36 +396,37 @@ release:
 
 static void ExtractAndSaveCameraImage(CInfraCameraFreezeFrame *freezeFrame) {
 	if (freezeFrame->m_pImage != NULL) {
+		const char* map_name = g_Engine->get_map_name();
 		CMatSystemTexture* tex = GetTextureById(freezeFrame->m_pImage->m_nTextureId);
 
 		if (tex == nullptr) {
-			g_LogWriter << "tex was null in " << get_map_name() << std::endl;
+			g_LogWriter << "tex was null in " << map_name << std::endl;
 			return;
 		}
 
 		CMaterial* mat = tex->m_pMaterial;
 
 		if (mat == nullptr) {
-			g_LogWriter << "mat was null in " << get_map_name() << std::endl;
+			g_LogWriter << "mat was null in " << map_name << std::endl;
 			return;
 		}
 
 		CTexture* repTex = mat->m_representativeTexture;
 
 		if (repTex == nullptr) {
-			g_LogWriter << "repTex was null in " << get_map_name() << std::endl;
+			g_LogWriter << "repTex was null in " << map_name << std::endl;
 			return;
 		}
 
 		Texture_t** texHandles = tex->m_pMaterial->m_representativeTexture->m_pTextureHandles;
 
 		if (texHandles == nullptr) {
-			g_LogWriter << "texHandles was null in " << get_map_name() << std::endl;
+			g_LogWriter << "texHandles was null in " << map_name << std::endl;
 			return;
 		}
 
 		if (texHandles[0] == nullptr) {
-			g_LogWriter << "texHandles[0] was null in " << get_map_name() << std::endl;
+			g_LogWriter << "texHandles[0] was null in " << map_name << std::endl;
 			return;
 		}
 
@@ -632,7 +440,7 @@ HRESULT __stdcall EndScene(LPDIRECT3DDEVICE9 pDevice) {
 		ExtractAndSaveCameraImage(g_FreezeFrame);
 	}
 
-	if (overlay::shown && !Base::Hooks::is_in_main_menu() && !Base::Hooks::loading_screen_visible()) {
+	if (overlay::shown && !g_Engine->is_in_main_menu() && !g_Engine->loading_screen_visible()) {
 		overlay::Render(Base::Data::hWindow, pDevice);
 	}
 
@@ -640,10 +448,6 @@ HRESULT __stdcall EndScene(LPDIRECT3DDEVICE9 pDevice) {
 }
 
 bool Base::Hooks::Init() {
-	infra::server_base = NULL;
-	infra::engine_base = NULL;
-	infra::client_base = NULL;
-
 	if (MH_Initialize() != MH_OK) {
 		MessageBoxA(NULL, "Failed to initialize MinHook!", "Error!", MB_OK);
 		return false;

@@ -17,7 +17,6 @@
     <ClInclude Include="include\font.hpp" />
     <ClInclude Include="Utils.h" />
     <ClInclude Include="StringUtils.h" />
-    <ClInclude Include="game\structs.h" />
     <ClInclude Include="plugin.h" />
     <ClInclude Include="mod.h" />
     <ClInclude Include="game\overlay.h" />
@@ -28,6 +27,9 @@
     <ClInclude Include="include\minhook\hde\pstdint.h" />
     <ClInclude Include="include\minhook\hde\table32.h" />
     <ClInclude Include="include\minhook\hde\table64.h" />
+    <ClInclude Include="include\SimpleIni.h" />
+    <ClInclude Include="game\counters.h" />
+    <ClInclude Include="game\infra.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp" />
@@ -51,6 +53,7 @@
     <ClCompile Include="include\minhook\trampoline.c" />
     <ClCompile Include="include\minhook\hde\hde32.c" />
     <ClCompile Include="include\minhook\hde\hde64.c" />
+    <ClCompile Include="game\counters.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="floorb_infra_mod.def" />

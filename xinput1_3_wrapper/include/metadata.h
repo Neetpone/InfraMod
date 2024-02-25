@@ -1,6 +1,5 @@
 #pragma once
 
-#include "stdafx.h"
 #include "json.hpp"
 
 auto g_mapdata = R"(

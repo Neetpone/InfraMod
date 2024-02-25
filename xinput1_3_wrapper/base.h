@@ -54,8 +54,6 @@ namespace Base {
 		bool Shutdown();
 		LRESULT CALLBACK  WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 		void hook_game_functions();
-		bool is_in_main_menu();
-		bool loading_screen_visible();
 	}
 }
 

@@ -1,5 +1,8 @@
 #pragma once
-#include <stdafx.h>
+#include "stdafx.h"
+
+#define _HOOKER_PROTOTYPE(BASE) template <typename T> void hook_##BASE(const int32_t offset, LPVOID pDetour, T **pOriginal);
+#define _GETTER_PROTOTYPE(BASE) void* get_##BASE##_ptr(const int32_t offset);
 
 namespace infra {
 	// Various structures reverse-engineered from Infra / its version of the Source engine.
@@ -158,6 +161,50 @@ namespace infra {
 		typedef void(__cdecl* GlobalEntity_SetState_t)(int globalIndex, GLOBALESTATE state);
 		typedef void* (__cdecl* GetPlayerByIndex_t)(int a1);
 
-		typedef int(__thiscall* KeyValues__GetInt_t)(void* thiz, char* key, int defVal);
+		typedef int(__thiscall* KeyValues__GetInt_t)(void* thiz, const char* key, int defVal);
 	}
+
+	class InfraEngine {
+	public:
+		InfraEngine();
+
+		_HOOKER_PROTOTYPE(client)
+		_HOOKER_PROTOTYPE(server)
+
+		_GETTER_PROTOTYPE(client)
+		_GETTER_PROTOTYPE(server)
+		_GETTER_PROTOTYPE(engine)
+		_GETTER_PROTOTYPE(vguimatsurface)
+		_GETTER_PROTOTYPE(materialsystem)
+
+		// Specific functions
+		bool is_in_main_menu();
+		bool loading_screen_visible();
+		const char* get_map_name();
+
+		int GlobalEntity_AddEntity(const char* pGlobalname, const char* pMapName, functions::GLOBALESTATE state) const;
+		void GlobalEntity_SetCounter(int globalIndex, int counter) const;
+		int GlobalEntity_GetCounter(int globalIndex) const;
+		int GlobalEntity_AddToCounter(int globalIndex, int count) const;
+		int GlobalEntity_GetState(int globalIndex) const;
+		void GlobalEntity_SetState(int globalIndex, functions::GLOBALESTATE state) const;
+	private:
+		void* engine_base;
+		void* server_base;
+		void* client_base;
+		void* vguimatsurface_base;
+		void* materialsystem_base;
+
+		functions::GlobalEntity_AddEntity_t pGlobalEntityAddEntity;
+		functions::GlobalEntity_SetCounter_t pGlobalEntitySetCounter;
+		functions::GlobalEntity_GetCounter_t pGlobalEntityGetCounter;
+		functions::GlobalEntity_AddToCounter_t pGlobalEntityAddToCounter;
+		functions::GlobalEntity_GetState_t pGlobalEntityGetState;
+		functions::GlobalEntity_SetState_t pGlobalEntitySetState;
+	};
+
+	InfraEngine* Engine();
 }
+
+#undef _HOOKER_PROTOTYPE
+#undef _GETTER_PROTOTYPE
