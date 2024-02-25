@@ -17,7 +17,7 @@ Locate your INFRA installation folder (the folder with `infra.exe`) and go one l
 which should leave you with a `floorb_infra_mod.dll` and a `addons/floorb_infra_mod.vdf`. Launch the game, and the overlay should display once you're in-game.
 
 ## Configuration
-After the first run, a file called `floorb_infra_mod.ini` is created in your INFRA installation folder (the same folder as `infra.exe`.) You can also create it there yourself after the first run.
+After the first run, a file called `floorb_infra_mod.ini` is created in your INFRA installation folder (the same folder as `infra.exe`.) You can also create it there yourself before the first run.
 
 The format is as follows:
 
@@ -29,6 +29,8 @@ functional_camera = true # whether to enable saving camera pictures to disk
 
 ## Thanks To
 [fehc](https://www.moddb.com/members/fehc) for their [INFRA Success Counters](https://www.moddb.com/mods/infra-success-counters) mod, which this code is based on. Their code is included in this project.
+
+[Photon](https://github.com/hero622/photon/), from which I borrowed a few snippets for implementing a Source engine plugin.
 
 [Dear ImGui](https://github.com/ocornut/imgui), which is included in this project for the Success Counters UI.
 
