@@ -54,8 +54,9 @@ static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* 
 	}
 
 	if (!GetClientRect(Base::Data::hWindow, &rect)) {
-		g_LogWriter << "StretchAndSaveCameraImage(): GetClientRect() failed" << std::endl;
-		goto release;
+		g_LogWriter << "StretchAndSaveCameraImage(): GetClientRect() failed (error: " << std::hex << GetLastError() << std::dec << ")" << std::endl;
+		rect = Base::Data::HACK_clientRect;
+		// goto release;
 	}
 
 	aspectRatio = static_cast<float>(rect.bottom - rect.top) / static_cast<float>(rect.right - rect.left);
@@ -131,7 +132,7 @@ static void ExtractAndSaveCameraImage(LPDIRECT3DDEVICE9 pDevice, const CInfraCam
 	}
 
 
-	StretchAndSaveCameraImage(pDevice, (IDirect3DTexture9*)texHandles[0]->m_pTexture0);
+	StretchAndSaveCameraImage(pDevice, texHandles[0]->m_pTexture0);
 }
 
 void mod::functional_camera::OnTakePicture(CInfraCameraFreezeFrame *freezeFrame) {

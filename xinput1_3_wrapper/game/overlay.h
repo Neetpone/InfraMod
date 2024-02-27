@@ -14,7 +14,7 @@ namespace overlay {
 		long long lastBlink;
 
 		OverlayLine_t() = default;
-		OverlayLine_t(std::string name, std::string value, ImVec4 nameColor, ImVec4 valueColor);
+		OverlayLine_t(std::string name, std::string value, const ImVec4& nameColor, const ImVec4& valueColor);
 	};
 
 	const ImVec4 fontColor = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
@@ -24,6 +24,7 @@ namespace overlay {
 	extern OverlayLine_t title;
 	extern std::vector<OverlayLine_t> lines;
 	extern bool imGuiInitialized;
+	extern int fontSize;
 
 	void WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 	void Render(HWND hWnd, LPDIRECT3DDEVICE9 pDevice);

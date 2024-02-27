@@ -31,6 +31,7 @@
     <ClInclude Include="game\counters.h" />
     <ClInclude Include="game\infra.h" />
     <ClInclude Include="game\functional_camera.h" />
+    <ClInclude Include="game\inventory.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp" />
@@ -55,6 +56,7 @@
     <ClCompile Include="include\minhook\hde\hde64.c" />
     <ClCompile Include="game\counters.cpp" />
     <ClCompile Include="game\functional_camera.cpp" />
+    <ClCompile Include="game\inventory.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="floorb_infra_mod.def" />

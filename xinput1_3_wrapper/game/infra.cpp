@@ -8,6 +8,7 @@
 
 #include "counters.h"
 #include "functional_camera.h"
+#include "inventory.h"
 
 using namespace infra::structs;
 using namespace infra::functions;
@@ -84,6 +85,8 @@ namespace infra {
 		this->pGlobalEntitySetState = reinterpret_cast<GlobalEntity_SetState_t>(this->get_server_ptr(0x1583F0));
 
 		this->pKeyValuesGetInt = reinterpret_cast<KeyValues__GetInt_t>(this->get_client_ptr(0x3A0840));
+		// For some reason, this yields an "Access violation executing location" error
+		this->pFindEntityByName = reinterpret_cast<CGlobalEntityList__FindEntityByName_t>(this->get_server_ptr(0x10ED60));
 	}
 
 	InfraEngine::~InfraEngine() {
@@ -91,6 +94,8 @@ namespace infra {
 			MH_DisableHook(hook);
 			MH_RemoveHook(hook);
 		}
+
+		this->enabledHooks.clear();
 	}
 
 	// TODO: Maybe make the hooker print out an error message if the hook fails.
@@ -143,7 +148,7 @@ namespace infra {
 		return *(static_cast<char**>(PTR_ADD(ptr, 0x3C)));
 	}
 
-	int InfraEngine::GlobalEntity_AddEntity(const char* pGlobalname, const char* pMapName, const functions::GLOBALESTATE state) const {
+	int InfraEngine::GlobalEntity_AddEntity(const char* pGlobalname, const char* pMapName, const GLOBALESTATE state) const {
 		return this->pGlobalEntityAddEntity(pGlobalname, pMapName, state);
 	}
 
@@ -163,7 +168,7 @@ namespace infra {
 		return this->pGlobalEntityGetState(globalIndex);
 	}
 
-	void InfraEngine::GlobalEntity_SetState(const int globalIndex, const functions::GLOBALESTATE state) const {
+	void InfraEngine::GlobalEntity_SetState(const int globalIndex, const GLOBALESTATE state) const {
 		return this->pGlobalEntitySetState(globalIndex, state);
 	}
 
@@ -178,6 +183,17 @@ namespace infra {
 		return this->pKeyValuesGetInt(lpKeyValues, name, defaultValue);
 	}
 
+	CGlobalEntityList* InfraEngine::server_entity_list() const {
+		return static_cast<CGlobalEntityList *>(this->get_server_ptr(0x725178));
+	}
+
+	CBaseEntity* InfraEngine::CGlobalEntityList__FindEntityByName(CBaseEntity* pStartEntity, const char* szName,
+	                                                 CBaseEntity* pSearchingEntity, CBaseEntity* pActivator,
+	                                                 CBaseEntity* pCaller, void* pFilter) const {
+		return this->pFindEntityByName(this->server_entity_list(), pStartEntity, szName, pSearchingEntity, pActivator, pCaller, pFilter);
+	}
+
+
 	InfraEngine* Engine() {
 		return g_Engine;
 	}
@@ -190,9 +206,11 @@ static void load_config() {
 	if (config.LoadFile("floorb_infra_mod.ini") == SI_OK) {
 		g_SuccessCountersEnabled = config.GetBoolValue("features", "success_counters", true);
 		g_FunctionalCameraEnabled = config.GetBoolValue("features", "functional_camera", true);
+		overlay::fontSize = config.GetLongValue("overlay", "font_size", 0);
 	} else {
 		config.SetBoolValue("features", "success_counters", true);
 		config.SetBoolValue("features", "functional_camera", true);
+		config.SetLongValue("overlay", "font_size", 0);
 		config.SaveFile("floorb_infra_mod.ini");
 	}
 }
@@ -213,12 +231,21 @@ static void hook_game_functions() {
 	GetPlayerByIndex = reinterpret_cast<GetPlayerByIndex_t>(g_Engine->get_client_ptr(0x51DD0));
 }
 
+static int(__thiscall* Weapon_Equip_orig)(void*, void*);
+
+static int __fastcall Weapon_Equip_hook(void *thiz, int, void *wep) {
+	return Weapon_Equip_orig(thiz, wep);
+}
+
 void __fastcall InitMapStats(void* this_ptr) {
 	InitMapStats_orig(this_ptr);
 
 	if (g_SuccessCountersEnabled) {
 		mod::counters::InitMapStats();
 	}
+
+	mod::inventory::MapLoaded(g_Engine->get_map_name());
+
 }
 
 int __fastcall StatSuccess(void* this_ptr, int, const int event_type, const int count, const bool is_new) {
@@ -264,6 +291,20 @@ HRESULT __stdcall EndScene(const LPDIRECT3DDEVICE9 pDevice) {
 LRESULT CALLBACK WndProc(const HWND hWnd, const UINT uMsg, const WPARAM wParam, const LPARAM lParam) {
 	if (g_SuccessCountersEnabled) {
 		overlay::WndProc(hWnd, uMsg, wParam, lParam);
+	}
+
+	if (uMsg == WM_KEYDOWN && wParam == VK_DELETE) {
+		CINFRA_Player* pPlayer = reinterpret_cast<CINFRA_Player*>(
+			g_Engine->CGlobalEntityList__FindEntityByName(nullptr, "!player")
+		);
+		const CGlobalEntityList* pEntityList = g_Engine->server_entity_list();
+		g_LogWriter << "Player Entity " << pPlayer << std::endl;
+		g_LogWriter << "Entity List " << pEntityList << std::endl;
+
+		g_LogWriter << "First weapon " << pEntityList->LookupEntity(&(pPlayer->m_Weapon0)) << std::endl;
+		g_LogWriter << "Second weapon " << pEntityList->LookupEntity(&(pPlayer->m_Weapon1)) << std::endl;
+		g_LogWriter << "Third weapon " << pEntityList->LookupEntity(&(pPlayer->m_Weapon2)) << std::endl;
+
 	}
 
 	return CallWindowProc(Base::Data::oWndProc, hWnd, uMsg, wParam, lParam);

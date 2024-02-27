@@ -24,6 +24,7 @@ namespace Base {
 		extern bool              Detached;
 		extern bool              ToDetach;
 		extern bool Inited;
+		extern RECT HACK_clientRect;
 
 
 		namespace Keys {

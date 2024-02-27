@@ -1,9 +1,9 @@
 #pragma once
 #include "plugin.h"
 
-class mod : public sdk::i_server_plugin_callbacks {
+class FloorbSourcePlugin : public sdk::i_server_plugin_callbacks {
 public:
-	mod();
+	FloorbSourcePlugin();
 
 	// https://github.com/hero622/photon/blob/cdb313fca8dd6a4e8f4d73bc803dbdadf04d8539/src/core/photon.h
 	virtual bool load(sdk::create_interface_fn interface_factory, sdk::create_interface_fn game_server_factory);

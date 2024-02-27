@@ -13,6 +13,7 @@ WndProc_t         Base::Data::oWndProc   = (WndProc_t)NULL;
 bool              Base::Data::Detached   = false;
 bool              Base::Data::ToDetach   = false;
 bool Base::Data::Inited = false;
+RECT Base::Data::HACK_clientRect;
 
 
 bool Base::Init() {

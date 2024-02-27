@@ -62,7 +62,7 @@ namespace infra {
 			uint8_t m_NumCopies; //0x0008
 			uint8_t m_CurrentCopy; //0x0009
 			char pad_000A[2]; //0x000A
-			void* m_pTexture0; //0x000C
+			IDirect3DTexture9* m_pTexture0; //0x000C
 			void* m_pTexture1; //0x0010
 			int32_t N000003E4; //0x0014
 			int32_t m_CreationFlags; //0x0018
@@ -147,10 +147,80 @@ namespace infra {
 			int32_t m_Flags; //0x0034
 			void* m_pRegen; //0x0038
 		}; //Size: 0x003C
+
+		class CBaseEntity {
+		};
+
+		class CMathCounter
+		{
+		public:
+			char pad_0000[208]; //0x0000
+			char* m_szName; //0x00D0
+			char pad_00D4[664]; //0x00D4
+			float m_CounterValue; //0x036C
+		}; //Size: 0x0370
+
+#define NUM_SERIAL_NUM_BITS		16 // (32 - NUM_ENT_ENTRY_BITS)
+#define NUM_SERIAL_NUM_SHIFT_BITS (32 - NUM_SERIAL_NUM_BITS)
+#define ENT_ENTRY_MASK			(( 1 << NUM_SERIAL_NUM_BITS) - 1)
+		class CBaseHandle {
+		public:
+			uint32_t m_Index;
+			int GetEntryIndex() const {
+				return this->m_Index & ENT_ENTRY_MASK;
+			}
+
+			int GetSerialNumber() const
+			{
+				return m_Index >> NUM_SERIAL_NUM_SHIFT_BITS;
+			}
+		};
+
+		class CEntInfo
+		{
+		public:
+			void* m_pEntity;
+			int				m_SerialNumber;
+			CEntInfo* m_pPrev;
+			CEntInfo* m_pNext;
+			char*		m_iName;
+			char*		m_iClassName;
+		};
+
+		// How many bits to use to encode an edict.
+#define	MAX_EDICT_BITS				11			// # of bits needed to represent max edicts
+// Max # of edicts in a level
+#define	MAX_EDICTS					(1<<MAX_EDICT_BITS)
+#define NUM_ENT_ENTRY_BITS		(MAX_EDICT_BITS + 2)
+#define NUM_ENT_ENTRIES			(1 << NUM_ENT_ENTRY_BITS)
+		class CGlobalEntityList {
+		public:
+			char pad_0000[4];
+			CEntInfo m_EntPtrArray[NUM_ENT_ENTRIES];
+
+			void *LookupEntity(const CBaseHandle *handle) const {
+				const CEntInfo* pInfo = &m_EntPtrArray[handle->GetEntryIndex()];
+				if (pInfo->m_SerialNumber == handle->GetSerialNumber())
+					return pInfo->m_pEntity;
+				else
+					return NULL;
+			}
+		};
+
+		class CINFRA_Player
+		{
+		public:
+			char pad_0000[2000]; //0x0000
+			CBaseHandle m_Weapon0; //0x07D0
+			CBaseHandle m_Weapon1; //0x07D4
+			CBaseHandle m_Weapon2; //0x07D8
+		}; //Size: 0x07DC
 	}
 
 	// Functions reverse-engineered from Infra / its version of the Source engine.
 	namespace functions {
+		using namespace infra::structs;
+
 		typedef enum { GLOBAL_OFF = 0, GLOBAL_ON = 1, GLOBAL_DEAD = 2 } GLOBALESTATE;
 
 		typedef int(__cdecl* GlobalEntity_AddEntity_t)(const char* pGlobalname, const char* pMapName, GLOBALESTATE state);
@@ -162,7 +232,12 @@ namespace infra {
 		typedef void* (__cdecl* GetPlayerByIndex_t)(int a1);
 
 		typedef int(__thiscall* KeyValues__GetInt_t)(void* thiz, const char* key, int defVal);
+		typedef CBaseEntity* (__thiscall* CGlobalEntityList__FindEntityByName_t)(void* thiz, CBaseEntity *pStartEntity, const char* szName, CBaseEntity* pSearchingEntity,
+			CBaseEntity* pActivator, CBaseEntity* pCaller, void* pFilter);
 	}
+
+	using namespace structs;
+	using namespace functions;
 
 	class InfraEngine {
 	public:
@@ -184,18 +259,24 @@ namespace infra {
 		const char* get_map_name();
 
 		// GlobalEntity functions
-		int GlobalEntity_AddEntity(const char* pGlobalname, const char* pMapName, functions::GLOBALESTATE state) const;
+		int GlobalEntity_AddEntity(const char* pGlobalname, const char* pMapName, GLOBALESTATE state) const;
 		void GlobalEntity_SetCounter(int globalIndex, int counter) const;
 		int GlobalEntity_GetCounter(int globalIndex) const;
 		int GlobalEntity_AddToCounter(int globalIndex, int count) const;
 		int GlobalEntity_GetState(int globalIndex) const;
-		void GlobalEntity_SetState(int globalIndex, functions::GLOBALESTATE state) const;
+		void GlobalEntity_SetState(int globalIndex, GLOBALESTATE state) const;
 
 		// MaterialSystem functions
-		structs::CMatSystemTexture* MaterialSystem_GetTextureById(int id) const;
+		CMatSystemTexture* MaterialSystem_GetTextureById(int id) const;
 
 		// Other stuff
 		int KeyValues__GetInt(void* lpKeyValues, const char* name, int defaultValue) const;
+
+		// Server entity stuff
+		CGlobalEntityList *server_entity_list() const;
+		CBaseEntity* CGlobalEntityList__FindEntityByName(CBaseEntity* pStartEntity, const char* szName,
+		                                                 CBaseEntity* pSearchingEntity = nullptr, CBaseEntity* pActivator = nullptr,
+		                                                 CBaseEntity* pCaller = nullptr, void* pFilter = nullptr) const;
 	private:
 		std::vector<void*> enabledHooks;
 		void* engine_base;
@@ -204,14 +285,15 @@ namespace infra {
 		void* vguimatsurface_base;
 		void* materialsystem_base;
 
-		functions::GlobalEntity_AddEntity_t pGlobalEntityAddEntity;
-		functions::GlobalEntity_SetCounter_t pGlobalEntitySetCounter;
-		functions::GlobalEntity_GetCounter_t pGlobalEntityGetCounter;
-		functions::GlobalEntity_AddToCounter_t pGlobalEntityAddToCounter;
-		functions::GlobalEntity_GetState_t pGlobalEntityGetState;
-		functions::GlobalEntity_SetState_t pGlobalEntitySetState;
+		GlobalEntity_AddEntity_t pGlobalEntityAddEntity;
+		GlobalEntity_SetCounter_t pGlobalEntitySetCounter;
+		GlobalEntity_GetCounter_t pGlobalEntityGetCounter;
+		GlobalEntity_AddToCounter_t pGlobalEntityAddToCounter;
+		GlobalEntity_GetState_t pGlobalEntityGetState;
+		GlobalEntity_SetState_t pGlobalEntitySetState;
 
-		functions::KeyValues__GetInt_t pKeyValuesGetInt;
+		KeyValues__GetInt_t pKeyValuesGetInt;
+		CGlobalEntityList__FindEntityByName_t pFindEntityByName;
 	};
 
 	InfraEngine* Engine();
