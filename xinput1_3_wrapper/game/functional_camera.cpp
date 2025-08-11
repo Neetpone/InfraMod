@@ -85,6 +85,7 @@ static void StretchAndSaveCameraImage(LPDIRECT3DDEVICE9 dev, IDirect3DTexture9* 
 	)
 
 	g_LogWriter << "StretchAndSaveCameraImage(): Successfully saved image!" << std::endl;
+#undef CHECK_D3D_RESULT
 
 release:
 	if (pRenderSurface != nullptr) pRenderSurface->Release();
@@ -119,7 +120,7 @@ static void ExtractAndSaveCameraImage(LPDIRECT3DDEVICE9 pDevice, const CInfraCam
 		return;
 	}
 
-	Texture_t** texHandles = tex->m_pMaterial->m_representativeTexture->m_pTextureHandles;
+	Texture_t** texHandles = repTex->m_pTextureHandles;
 
 	if (texHandles == nullptr) {
 		g_LogWriter << "texHandles was null in " << map_name << std::endl;
@@ -130,7 +131,6 @@ static void ExtractAndSaveCameraImage(LPDIRECT3DDEVICE9 pDevice, const CInfraCam
 		g_LogWriter << "texHandles[0] was null in " << map_name << std::endl;
 		return;
 	}
-
 
 	StretchAndSaveCameraImage(pDevice, texHandles[0]->m_pTexture0);
 }

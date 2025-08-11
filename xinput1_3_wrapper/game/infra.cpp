@@ -51,9 +51,6 @@ static bool g_SuccessCountersEnabled = true;
 static bool g_FunctionalCameraEnabled = true;
 static infra::InfraEngine* g_Engine;
 
-#define PTR_ADD(P, A) ((void *)(((uint32_t) (P)) + (A)))
-
-
 static void* GetModuleAddress(const char* name) {
 	void* addr;
 
@@ -85,7 +82,7 @@ namespace infra {
 		this->pGlobalEntitySetState = reinterpret_cast<GlobalEntity_SetState_t>(this->get_server_ptr(0x1583F0));
 
 		this->pKeyValuesGetInt = reinterpret_cast<KeyValues__GetInt_t>(this->get_client_ptr(0x3A0840));
-		// For some reason, this yields an "Access violation executing location" error
+		// For some reason, this yields an "Access violation executing location" error - maybe this was true one day, but now it isn't?
 		this->pFindEntityByName = reinterpret_cast<CGlobalEntityList__FindEntityByName_t>(this->get_server_ptr(0x10ED60));
 	}
 
@@ -179,6 +176,15 @@ namespace infra {
 		return static_cast<CMatSystemTexture*>(PTR_ADD(textureList, id << 6));
 	}
 
+	CVGui *InfraEngine::VGui() const {
+		// This is the g_Vgui in VGuiMaterialSurface, it was the best way I could find to get a ptr to it.
+		return *static_cast<CVGui**>(PTR_ADD(this->vguimatsurface_base, 0x14E1DC));
+	}
+
+	CHud *InfraEngine::Hud() const {
+		return static_cast<CHud*>(PTR_ADD(this->client_base, 0x6BB028));
+	}
+
 	int InfraEngine::KeyValues__GetInt(void* lpKeyValues, const char* name, const int defaultValue) const {
 		return this->pKeyValuesGetInt(lpKeyValues, name, defaultValue);
 	}
@@ -245,7 +251,6 @@ void __fastcall InitMapStats(void* this_ptr) {
 	}
 
 	mod::inventory::MapLoaded(g_Engine->get_map_name());
-
 }
 
 int __fastcall StatSuccess(void* this_ptr, int, const int event_type, const int count, const bool is_new) {
@@ -294,6 +299,10 @@ LRESULT CALLBACK WndProc(const HWND hWnd, const UINT uMsg, const WPARAM wParam, 
 	}
 
 	if (uMsg == WM_KEYDOWN && wParam == VK_DELETE) {
+		void* globalBills = g_Engine->CGlobalEntityList__FindEntityByName(nullptr, "env_global_bills");
+
+		g_LogWriter << "GlobalBills addr: " << globalBills << std::endl;
+
 		CINFRA_Player* pPlayer = reinterpret_cast<CINFRA_Player*>(
 			g_Engine->CGlobalEntityList__FindEntityByName(nullptr, "!player")
 		);
@@ -301,10 +310,16 @@ LRESULT CALLBACK WndProc(const HWND hWnd, const UINT uMsg, const WPARAM wParam, 
 		g_LogWriter << "Player Entity " << pPlayer << std::endl;
 		g_LogWriter << "Entity List " << pEntityList << std::endl;
 
+		/*
+		for (int i = 0; i < NUM_ENT_ENTRIES; i++) {
+			CEntInfo info = pEntityList->m_EntPtrArray[i];
+
+			g_LogWriter << "Entity " << i << " class: " << info.m_iClassName << ", name: " << info.m_iName << std::endl;
+		}*/
+
 		g_LogWriter << "First weapon " << pEntityList->LookupEntity(&(pPlayer->m_Weapon0)) << std::endl;
 		g_LogWriter << "Second weapon " << pEntityList->LookupEntity(&(pPlayer->m_Weapon1)) << std::endl;
 		g_LogWriter << "Third weapon " << pEntityList->LookupEntity(&(pPlayer->m_Weapon2)) << std::endl;
-
 	}
 
 	return CallWindowProc(Base::Data::oWndProc, hWnd, uMsg, wParam, lParam);

@@ -34,3 +34,5 @@
 #include <imgui/imgui_impl_win32.h>
 #include <imgui/imgui_impl_dx9.h>
 #pragma comment(lib, "D3DX9.LIB")
+
+#define PTR_ADD(P, A) ((void *)(((uint32_t) (P)) + (A)))

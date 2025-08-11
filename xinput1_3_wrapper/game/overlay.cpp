@@ -60,7 +60,7 @@ static void ResizeImGui() {
 	const int height = Base::Data::HACK_clientRect.bottom - Base::Data::HACK_clientRect.top;
 	const ImVec2 charDimensions = ImGui::CalcTextSize("W");
 	const ImVec2 mapNameDimensions = ImGui::CalcTextSize(overlay::title.value.c_str());
-	const int counterWidth = std::max(static_cast<int>(mapNameDimensions.x), 26);
+	const int counterWidth = std::max(static_cast<int>(mapNameDimensions.x), 28);
 	const int flashlightDimensions = ImGui::CalcTextSize("Flashlight: 999").x;
 
 	g_CounterWindowSize = ImVec2(counterWidth + 16, charDimensions.y * 7.2);
@@ -103,6 +103,25 @@ static void RenderCounters() {
 	long long now;
 
 	now = CurrentTimeMillis();
+
+	// Measure the text size
+	std::vector<std::string> lines;
+
+	lines.resize(overlay::lines.size());
+	std::transform(
+		overlay::lines.begin(),
+		overlay::lines.end(),
+		lines.begin(),
+		[](const overlay::OverlayLine_t &line) {
+			return line.name + line.value;
+		}
+	);
+
+	const ImVec2 maxSize = CalcMaxTextSize(lines);
+
+	// Need to use the client rect as above but I'm lazy right now.
+	// ImGui::SetNextWindowPos(ImVec2(10, 20));
+	// ImGui::SetNextWindowSize(ImVec2(maxSize.x + 16, (lines.size() * maxSize.y) + 20));
 
 	ImGui::SetNextWindowPos(g_CounterWindowPos, ImGuiCond_FirstUseEver);
 	ImGui::SetNextWindowSize(g_CounterWindowSize, ImGuiCond_FirstUseEver);
@@ -149,12 +168,21 @@ static void RenderInventory() {
 	// Build the list of stuff to render
 	std::vector<std::string> lines = std::vector<std::string>();
 
+	if (mod::inventory::flashlightBatteriesCounter != nullptr) {
+		lines.push_back(std::string("Flashlight: ") + std::to_string(*mod::inventory::flashlightBatteriesCounter));
+	}
+
+	if (mod::inventory::cameraBatteriesCounter != nullptr) {
+		lines.push_back(std::string("Camera:     ") + std::to_string(*mod::inventory::cameraBatteriesCounter));
+	}
+
 	if (mod::inventory::osCoinsCounter != nullptr) {
 		lines.push_back(std::string("OS Coins:   ") + std::to_string(static_cast<int>(*mod::inventory::osCoinsCounter)));
 	}
 
-	lines.push_back("Flashlight: 0");
-	lines.push_back("Camera:     0");
+	if (lines.empty()) {
+		return;
+	}
 
 	const ImVec2 maxSize = CalcMaxTextSize(lines);
 

@@ -193,6 +193,7 @@ namespace infra {
 #define	MAX_EDICTS					(1<<MAX_EDICT_BITS)
 #define NUM_ENT_ENTRY_BITS		(MAX_EDICT_BITS + 2)
 #define NUM_ENT_ENTRIES			(1 << NUM_ENT_ENTRY_BITS)
+		// This is actually CBaseEntityList. Pretty sure NUM_ENT_ENTRIES is too big.
 		class CGlobalEntityList {
 		public:
 			char pad_0000[4];
@@ -211,10 +212,114 @@ namespace infra {
 		{
 		public:
 			char pad_0000[2000]; //0x0000
-			CBaseHandle m_Weapon0; //0x07D0
-			CBaseHandle m_Weapon1; //0x07D4
-			CBaseHandle m_Weapon2; //0x07D8
-		}; //Size: 0x07DC
+			class CBaseHandle m_Weapon0; //0x07D0
+			class CBaseHandle m_Weapon1; //0x07D4
+			class CBaseHandle m_Weapon2; //0x07D8
+			char pad_07DC[3804]; //0x07DC
+			void* m_Shared; //0x16B8
+			char pad_16BC[404]; //0x16BC
+			int32_t m_nFlashlightBatteries; //0x1850
+			int32_t m_nCameraBatteries; //0x1854
+		}; //Size: 0x1858
+
+		class CUtlMemory
+		{
+		public:
+			void* m_pMemory; //0x0000
+			int32_t m_nAllocationCount; //0x0004
+			int32_t m_nGrowSize; //0x0008
+		}; //Size: 0x000C
+
+		template <typename T = void>
+		class CUtlVector : public CUtlMemory
+		{
+		public:
+			int32_t m_Size; //0x000C
+			T *m_pElements; //0x0010
+		}; //Size: 0x0014
+
+		class CUtlHandleTable
+		{
+		public:
+			uint32_t m_nValidHandles; //0x0000
+			class CUtlVector<> m_list; //0x0004
+		}; //Size: 0x0018
+
+		class CVGui
+		{
+		public:
+			char pad_0000[4]; //0x0000
+			class CUtlHandleTable m_handleTable; //0x0004
+		}; //Size: 0x001C
+		class VPanel
+		{
+		public:
+			char pad_0000[4]; //0x0000
+			class CUtlVector<> _childDar; //0x0004
+			void* _parent; //0x0018
+			void* _plat; //0x001C
+			uint64_t _hPanel; //0x0020
+			void* _clientPanel; //0x0028
+			int16_t _pos0; //0x002C
+			int16_t _pos1; //0x002E
+			int16_t _size0; //0x0030
+			int16_t _size1; //0x0032
+			int16_t _minimumSize0; //0x0034
+			int16_t _minimumSize1; //0x0036
+			int16_t _inset0; //0x0038
+			int16_t _inset1; //0x003A
+			int16_t _inset2; //0x003C
+			int16_t _inset3; //0x003E
+			int16_t _clipRect0; //0x0040
+			int16_t _clipRect1; //0x0042
+			int16_t _clipRect2; //0x0044
+			int16_t _clipRect3; //0x0046
+			int16_t _absPos0; //0x0048
+			int16_t _absPos1; //0x004A
+			int16_t _zpos; //0x004C
+			char pad_004E[10]; //0x004E
+			void* _pinsibling; //0x0058
+			char pad_005C[4]; //0x005C
+		}; //Size: 0x0060
+
+		class CHudElement
+		{
+		public:
+			char pad_0000[24]; //0x0000
+			char* clazz; //0x0018
+			char pad_001C[56]; //0x001C
+			char* name; //0x0054
+		}; //Size: 0x0058
+
+		class CHud
+		{
+		public:
+			char pad_0000[4]; //0x0000
+			int32_t m_iKeyBits; //0x0004
+			float m_flMouseSensitivity; //0x0008
+			float m_flMouseSentitivityFactor; //0x000C
+			float m_flFOVSensitivityAdjust; //0x0010
+			int32_t m_clrNormal; //0x0014
+			int32_t m_clrCaution; //0x0018
+			int32_t m_clrYellowish; //0x001C
+			class CUtlVector<CHudElement *> m_hudList; //0x0020
+			class CUtlVector<> m_hudPanelList; //0x0034
+			char pad_0048[9184]; //0x0048
+		};
+
+		class CCameraAmmo
+		{
+		public:
+			char pad_0000[436]; //0x0000
+			int32_t count; //0x01B4
+		}; //Size: 0x01B8
+
+		class CFlashlightAmmo
+		{
+		public:
+			char pad_0000[348]; //0x0000
+			int32_t count; //0x015C
+		}; //Size: 0x0160
 	}
 
 	// Functions reverse-engineered from Infra / its version of the Source engine.
@@ -268,6 +373,10 @@ namespace infra {
 
 		// MaterialSystem functions
 		CMatSystemTexture* MaterialSystem_GetTextureById(int id) const;
+
+		// VGui functions
+		CVGui* VGui() const;
+		CHud* Hud() const;
 
 		// Other stuff
 		int KeyValues__GetInt(void* lpKeyValues, const char* name, int defaultValue) const;
